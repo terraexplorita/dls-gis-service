@@ -21,7 +21,26 @@ const P={
   IDI0008:{area:'pafos',sheet:'46',plan:'24',block:0,parcel:260},
   IDI0010:{area:'pafos',sheet:'46',plan:'24',block:0,parcel:575}
 };
-async function q(base,params){const u=new URL(base+'/query');for(const[k,v]of Object.entries(params))u.searchParams.set(k,String(v));const r=await fetch(u,{signal:AbortSignal.timeout(25000),headers:{'user-agent':'dls-gis-service-selftest/1.3'}});if(!r.ok)throw new Error(`DLS HTTP ${r.status}`);const j=await r.json();if(j.error)throw new Error(JSON.stringify(j.error));return j;}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function q(base,params){
+  const u=new URL(base+'/query');for(const[k,v]of Object.entries(params))u.searchParams.set(k,String(v));
+  let lastErr;
+  for(let attempt=1;attempt<=4;attempt++){
+    try{
+      const r=await fetch(u,{signal:AbortSignal.timeout(10000),headers:{'user-agent':'dls-gis-service-selftest/1.4'}});
+      if(!r.ok){if(r.status>=500)throw new Error(`DLS HTTP ${r.status}`);throw new Error(`DLS HTTP ${r.status}`);}
+      const j=await r.json();if(j.error)throw new Error(JSON.stringify(j.error));
+      if(attempt>1)console.log(`DLS_RETRY_OK attempt=${attempt} url=${u.pathname}`);
+      return j;
+    }catch(e){
+      lastErr=e;
+      if(attempt===4)break;
+      console.warn(`DLS_RETRY attempt=${attempt} reason=${e?.name||'Error'}:${e?.message||e}`);
+      await sleep(750*attempt);
+    }
+  }
+  throw lastErr;
+}
 const codeCache={};
 async function areaCodes(key){if(codeCache[key])return codeCache[key];const a=AREAS[key];const dj=await q(DISTRICTS,{f:'json',where:`DIST_NM_E='${a.district}'`,outFields:'DIST_CODE,DIST_NM_E',returnGeometry:'false'});if(dj.features?.length!==1)throw new Error(`District ${a.district}: expected 1, got ${dj.features?.length??0}`);const dist=Number(dj.features[0].attributes.DIST_CODE);const cj=await q(COMMUNITIES,{f:'json',where:`DIST_CODE=${dist} AND UPPER(VIL_NM_E) LIKE '%${a.communityNeedle.toUpperCase()}%'`,outFields:'DIST_CODE,VIL_CODE,VIL_NM_E',returnGeometry:'false'});if(cj.features?.length!==1)throw new Error(`Community ${a.district}/${a.communityNeedle}: expected 1, got ${cj.features?.length??0}; matches=${JSON.stringify((cj.features||[]).map(x=>x.attributes))}`);const attrs=cj.features[0].attributes;const out={dist,vil:Number(attrs.VIL_CODE),district:a.district,community:String(attrs.VIL_NM_E)};console.log('DLS_AREA '+JSON.stringify(out));return codeCache[key]=out;}
 async function parcel(p){const c=await areaCodes(p.area);const where=`DIST_CODE=${c.dist} AND VIL_CODE=${c.vil} AND BLCK_CODE=${p.block} AND PARCEL_NBR=${p.parcel} AND SHEET='${p.sheet}' AND PLAN_NBR='${p.plan}'`;const j=await q(PARCELS,{f:'json',where,outFields:'SBPI_ID_NO,DIST_CODE,VIL_CODE,QRTR_CODE,BLCK_CODE,PARCEL_NBR,SHEET,PLAN_NBR,SHAPE.STArea()',returnGeometry:'true',outSR:CRS,returnZ:'false'});if(j.features?.length!==1)throw new Error(`Locator ${where}: expected 1 feature, got ${j.features?.length??0}`);const f=j.features[0];console.log('DLS_RESOLVE '+JSON.stringify({area:p.area,locator:{sheet:p.sheet,plan:p.plan,block:p.block,parcel:p.parcel},parcel:f.attributes}));return f;}
