@@ -1,10 +1,11 @@
 {
   "name": "dls-gis-service",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node selftest.js && node viewer.js",
+    "start": "node viewer.js",
+    "verify": "node selftest.js",
     "test": "node test.js"
   },
   "dependencies": {
