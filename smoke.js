@@ -28,7 +28,7 @@ async function checkSvg(path,name,minChars){
  assert(t.includes('data:image/png'),`${name}: official DLS basemap image not embedded`);
  assert(t.includes('EPSG:102319'),`${name}: CRS label missing`);
  assert(t.length>minChars,`${name}: SVG suspiciously small (${t.length} chars; expected >${minChars})`);
- return{mpp,bytes:t.length};
+ return{mpp,bytes:t.length,text:t};
 }
 const arsos=await checkSvg('/map.svg?group=arsos&mpp=2','arsos',50000);
 const pafos=await checkSvg('/map.svg?group=pafos&mpp=2','pafos',10000);
@@ -46,24 +46,28 @@ assert(Math.abs(scaleChecks.gap_194_076m_px-97.038054)<0.05,'194.08m scale conve
 // Property web app smoke checks.
 const catalogue=await fetchText('/properties');
 assert((catalogue.r.headers.get('content-type')||'').includes('text/html'),'catalogue is not HTML');
-assert(catalogue.t.includes('ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ'),'catalogue heading missing');
+assert(catalogue.t.includes('Όλα τα καταχωρημένα ακίνητα'),'catalogue heading missing');
 assert(catalogue.t.includes('ΕΡΓ-ΙΔΙ-0006'),'owned property missing from catalogue');
 assert(catalogue.t.includes('ΕΡΓ-ΑΚΙ-0008'),'candidate property missing from catalogue');
 
-const detail=await fetchText('/property/ERG-AKI-0008');
+const detail=await fetchText('/property/AKI0008');
 assert(detail.t.includes('ΕΡΓ-ΑΚΙ-0008'),'property detail code missing');
 assert(detail.t.includes('10.040'),'auction minimum price missing');
 assert(detail.t.includes('Αρχική πηγή'),'source link section missing');
 
-const interactive=await fetchText('/map/arsos?mpp=2');
-assert(interactive.t.includes('ΙΔΙΟΚΤΗΤΑ ΑΚΙΝΗΤΑ'),'owned sidebar missing');
-assert(interactive.t.includes('ΑΚΙΝΗΤΑ ΠΡΟΣ ΑΓΟΡΑ'),'candidate sidebar missing');
-assert(interactive.t.includes('ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ'),'catalogue link missing from map page');
-assert(interactive.t.includes('/property/ERG-AKI-0008'),'details link missing from map page');
-assert(interactive.t.includes('DLS Road Network'),'road layer label missing');
+const wrapper=await fetchText('/map?group=arsos&mpp=2');
+assert(wrapper.t.includes('/map.svg?group=arsos&amp;mpp=2')||wrapper.t.includes('/map.svg?group=arsos&mpp=2'),'map wrapper does not load arsos SVG');
+assert(wrapper.t.includes('/properties'),'catalogue navigation missing from map wrapper');
+
+const interactive=arsos.text;
+assert(interactive.includes('ΙΔΙΟΚΤΗΤΑ ΑΚΙΝΗΤΑ'),'owned sidebar missing');
+assert(interactive.includes('ΑΚΙΝΗΤΑ ΠΡΟΣ ΑΓΟΡΑ'),'candidate sidebar missing');
+assert(interactive.includes('ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ'),'catalogue link missing from interactive SVG');
+assert(interactive.includes('/property/AKI0008'),'details link missing from interactive SVG');
+assert(interactive.includes('DLS Road Network'),'road layer label missing');
 
 const png=await fetchBytes('/map.png?group=arsos&mpp=2');
 assert((png.r.headers.get('content-type')||'').includes('image/png'),'map PNG endpoint is not image/png');
 assert(png.b.length>20000,`map PNG suspiciously small (${png.b.length} bytes)`);
 
-console.log('MAP_SMOKE '+JSON.stringify({ALL_PASS:true,crs:102319,requested_mpp:2,arsos,pafos,master,orientation:{REMU42711_west_of_4_274:true,delta_x_m:touch.centroid_relation.delta_x_m},scaleChecks,webApp:{catalogue:true,propertyDetail:true,interactiveMap:true,png:true}}));
+console.log('MAP_SMOKE '+JSON.stringify({ALL_PASS:true,crs:102319,requested_mpp:2,arsos:{mpp:arsos.mpp,bytes:arsos.bytes},pafos:{mpp:pafos.mpp,bytes:pafos.bytes},master:{mpp:master.mpp,bytes:master.bytes},orientation:{REMU42711_west_of_4_274:true,delta_x_m:touch.centroid_relation.delta_x_m},scaleChecks,webApp:{catalogue:true,propertyDetail:true,interactiveMap:true,png:true}}));
