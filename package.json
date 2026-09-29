@@ -1,11 +1,14 @@
 {
   "name": "dls-gis-service",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node selftest.js && sh -c 'node server.js & pid=$!; sleep 2; node smoke.js || { kill $pid; exit 1; }; wait $pid'",
     "test": "node test.js"
+  },
+  "dependencies": {
+    "sharp": "^0.34.4"
   },
   "engines": {
     "node": ">=20"
