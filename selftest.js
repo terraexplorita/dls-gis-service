@@ -6,8 +6,8 @@ const DISTRICTS=MAP+'/15';
 const COMMUNITIES=MAP+'/16';
 const CRS=102319;
 const AREAS={
-  arsos:{district:'LEMESOS',community:'ARSOS'},
-  pafos:{district:'PAFOS',community:'AGIOS NIKOLAOS'}
+  arsos:{district:'LEMESOS',communityNeedle:'ARSOS'},
+  pafos:{district:'PAFOS',communityNeedle:'AGIOS NIKOLAOS'}
 };
 const P={
   IDI0006:{area:'arsos',sheet:'46',plan:'48W1',block:4,parcel:287},
@@ -21,9 +21,9 @@ const P={
   IDI0008:{area:'pafos',sheet:'46',plan:'24',block:0,parcel:260},
   IDI0010:{area:'pafos',sheet:'46',plan:'24',block:0,parcel:575}
 };
-async function q(base,params){const u=new URL(base+'/query');for(const[k,v]of Object.entries(params))u.searchParams.set(k,String(v));const r=await fetch(u,{signal:AbortSignal.timeout(25000),headers:{'user-agent':'dls-gis-service-selftest/1.2'}});if(!r.ok)throw new Error(`DLS HTTP ${r.status}`);const j=await r.json();if(j.error)throw new Error(JSON.stringify(j.error));return j;}
+async function q(base,params){const u=new URL(base+'/query');for(const[k,v]of Object.entries(params))u.searchParams.set(k,String(v));const r=await fetch(u,{signal:AbortSignal.timeout(25000),headers:{'user-agent':'dls-gis-service-selftest/1.3'}});if(!r.ok)throw new Error(`DLS HTTP ${r.status}`);const j=await r.json();if(j.error)throw new Error(JSON.stringify(j.error));return j;}
 const codeCache={};
-async function areaCodes(key){if(codeCache[key])return codeCache[key];const a=AREAS[key];const dj=await q(DISTRICTS,{f:'json',where:`DIST_NM_E='${a.district}'`,outFields:'DIST_CODE,DIST_NM_E',returnGeometry:'false'});if(dj.features?.length!==1)throw new Error(`District ${a.district}: expected 1, got ${dj.features?.length??0}`);const dist=Number(dj.features[0].attributes.DIST_CODE);const cj=await q(COMMUNITIES,{f:'json',where:`DIST_CODE=${dist} AND VIL_NM_E='${a.community}'`,outFields:'DIST_CODE,VIL_CODE,VIL_NM_E',returnGeometry:'false'});if(cj.features?.length!==1)throw new Error(`Community ${a.district}/${a.community}: expected 1, got ${cj.features?.length??0}`);const out={dist,vil:Number(cj.features[0].attributes.VIL_CODE),district:a.district,community:a.community};console.log('DLS_AREA '+JSON.stringify(out));return codeCache[key]=out;}
+async function areaCodes(key){if(codeCache[key])return codeCache[key];const a=AREAS[key];const dj=await q(DISTRICTS,{f:'json',where:`DIST_NM_E='${a.district}'`,outFields:'DIST_CODE,DIST_NM_E',returnGeometry:'false'});if(dj.features?.length!==1)throw new Error(`District ${a.district}: expected 1, got ${dj.features?.length??0}`);const dist=Number(dj.features[0].attributes.DIST_CODE);const cj=await q(COMMUNITIES,{f:'json',where:`DIST_CODE=${dist} AND UPPER(VIL_NM_E) LIKE '%${a.communityNeedle.toUpperCase()}%'`,outFields:'DIST_CODE,VIL_CODE,VIL_NM_E',returnGeometry:'false'});if(cj.features?.length!==1)throw new Error(`Community ${a.district}/${a.communityNeedle}: expected 1, got ${cj.features?.length??0}; matches=${JSON.stringify((cj.features||[]).map(x=>x.attributes))}`);const attrs=cj.features[0].attributes;const out={dist,vil:Number(attrs.VIL_CODE),district:a.district,community:String(attrs.VIL_NM_E)};console.log('DLS_AREA '+JSON.stringify(out));return codeCache[key]=out;}
 async function parcel(p){const c=await areaCodes(p.area);const where=`DIST_CODE=${c.dist} AND VIL_CODE=${c.vil} AND BLCK_CODE=${p.block} AND PARCEL_NBR=${p.parcel} AND SHEET='${p.sheet}' AND PLAN_NBR='${p.plan}'`;const j=await q(PARCELS,{f:'json',where,outFields:'SBPI_ID_NO,DIST_CODE,VIL_CODE,QRTR_CODE,BLCK_CODE,PARCEL_NBR,SHEET,PLAN_NBR,SHAPE.STArea()',returnGeometry:'true',outSR:CRS,returnZ:'false'});if(j.features?.length!==1)throw new Error(`Locator ${where}: expected 1 feature, got ${j.features?.length??0}`);const f=j.features[0];console.log('DLS_RESOLVE '+JSON.stringify({area:p.area,locator:{sheet:p.sheet,plan:p.plan,block:p.block,parcel:p.parcel},parcel:f.attributes}));return f;}
 const rings=f=>f.geometry?.rings||[];
 function pd(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l2=dx*dx+dy*dy;if(!l2)return Math.hypot(p[0]-a[0],p[1]-a[1]);const t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2));return Math.hypot(p[0]-(a[0]+t*dx),p[1]-(a[1]+t*dy));}
