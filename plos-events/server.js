@@ -11,11 +11,34 @@ const dataPath = path.join(__dirname, 'events.json');
 const PORT = process.env.PORT || 3000;
 const DEFAULT_INVITEE = process.env.DEFAULT_INVITEE || 'sflourentzou@gmail.com';
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
+const APP_USER = process.env.APP_USER || 'achilleas';
+const APP_PASSWORD = process.env.APP_PASSWORD || '';
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
 
 function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
+}
+
+function authorized(req) {
+  if (!APP_PASSWORD) return true;
+  const header = req.headers.authorization || '';
+  if (!header.startsWith('Basic ')) return false;
+  try {
+    const [user, password] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':');
+    return user === APP_USER && password === APP_PASSWORD;
+  } catch { return false; }
+}
+
+function requireAuth(req, res) {
+  if (authorized(req)) return true;
+  res.writeHead(401, {
+    'www-authenticate': 'Basic realm="PERSONAL LIFE OS Events", charset="UTF-8"',
+    'content-type': 'text/plain; charset=utf-8',
+    'cache-control': 'no-store'
+  });
+  res.end('Authentication required');
+  return false;
 }
 
 function readEvents() {
@@ -71,18 +94,9 @@ async function getRefreshToken() {
 async function getAccessToken() {
   const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
   const refreshToken = await getRefreshToken();
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !refreshToken) {
-    throw new Error('Google Calendar OAuth is not connected.');
-  }
-  const form = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
-    client_secret: GOOGLE_CLIENT_SECRET,
-    refresh_token: refreshToken,
-    grant_type: 'refresh_token'
-  });
-  const r = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form
-  });
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !refreshToken) throw new Error('Google Calendar OAuth is not connected.');
+  const form = new URLSearchParams({ client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET, refresh_token: refreshToken, grant_type: 'refresh_token' });
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form });
   const data = await r.json();
   if (!r.ok || !data.access_token) throw new Error(data.error_description || data.error || 'OAuth refresh failed');
   return data.access_token;
@@ -118,9 +132,7 @@ function eventToGoogle(e, invitee, sendInvite) {
   return body;
 }
 
-function nextDate(d) {
-  const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0,10);
-}
+function nextDate(d) { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0,10); }
 function addHours(dt, hours) { return new Date(new Date(dt).getTime() + hours * 3600000).toISOString(); }
 
 async function findCalendarEventByPlosId(id) {
@@ -151,9 +163,7 @@ async function inviteOne(e, invitee) {
   if (!found) return { invited: false, reason: 'not_in_calendar' };
   const attendees = (found.attendees || []).filter(a => (a.email || '').toLowerCase() !== invitee.toLowerCase());
   attendees.push({ email: invitee });
-  const patched = await gcal(`/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${encodeURIComponent(found.id)}?sendUpdates=all`, {
-    method: 'PATCH', body: JSON.stringify({ attendees })
-  });
+  const patched = await gcal(`/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${encodeURIComponent(found.id)}?sendUpdates=all`, { method: 'PATCH', body: JSON.stringify({ attendees }) });
   return { invited: true, eventId: patched.id };
 }
 
@@ -197,8 +207,12 @@ async function oauthCallback(req, res, u) {
   const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error_description || data.error || 'OAuth exchange failed');
-  if (data.refresh_token) await setSetting('google_refresh_token', data.refresh_token);
-  else if (!(await getRefreshToken())) throw new Error('Google did not return a refresh token. Revoke access and reconnect with consent.');
+  if (data.refresh_token && pool) await setSetting('google_refresh_token', data.refresh_token);
+  if (data.refresh_token && !pool) {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(`<!doctype html><meta charset="utf-8"><title>Google Calendar connected</title><body style="font-family:Arial;padding:30px;max-width:800px"><h1>Η Google εξουσιοδότηση ολοκληρώθηκε</h1><p>Για μόνιμη σύνδεση, πρόσθεσε στο Render environment variable <b>GOOGLE_REFRESH_TOKEN</b> την παρακάτω τιμή και μετά κάνε redeploy:</p><textarea style="width:100%;height:120px">${String(data.refresh_token).replaceAll('&','&amp;').replaceAll('<','&lt;')}</textarea><p><b>Μην κοινοποιήσεις αυτή την τιμή.</b></p></body>`);
+  }
+  if (!(await getRefreshToken())) throw new Error('Google did not return a refresh token. Revoke access and reconnect with consent.');
   res.writeHead(302, { location: '/?connected=1' });
   res.end();
 }
@@ -206,10 +220,15 @@ async function oauthCallback(req, res, u) {
 const server = http.createServer(async (req, res) => {
   try {
     const u = new URL(req.url, `http://${req.headers.host}`);
+    if (u.pathname === '/api/health') {
+      let connected = false;
+      try { connected = Boolean(await getRefreshToken()); } catch {}
+      return json(res, 200, { ok: true, protected: Boolean(APP_PASSWORD), databaseConfigured: Boolean(pool), oauthClientConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), calendarConnected: connected });
+    }
+    if (!requireAuth(req, res)) return;
 
     if (u.pathname === '/oauth/start' && req.method === 'GET') return oauthStart(req, res);
     if (u.pathname === '/oauth/callback' && req.method === 'GET') return oauthCallback(req, res, u);
-
     if (u.pathname === '/api/events' && req.method === 'GET') return json(res, 200, { events: readEvents(), defaultInvitee: DEFAULT_INVITEE });
 
     if (u.pathname === '/api/status' && req.method === 'POST') {
@@ -241,17 +260,6 @@ const server = http.createServer(async (req, res) => {
       const results = {};
       for (const e of getByIds(ids)) results[e.id] = await inviteOne(e, invitee);
       return json(res, 200, { ok: true, results });
-    }
-
-    if (u.pathname === '/api/health') {
-      let connected = false;
-      try { connected = Boolean(await getRefreshToken()); } catch {}
-      return json(res, 200, {
-        ok: true,
-        databaseConfigured: Boolean(pool),
-        oauthClientConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
-        calendarConnected: connected
-      });
     }
 
     const file = safePublicPath(u.pathname);
