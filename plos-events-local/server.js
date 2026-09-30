@@ -1,0 +1,260 @@
+import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(__dirname, 'public');
+const appDir = path.join(os.homedir(), '.plos-events');
+const credentialsPath = path.join(appDir, 'credentials.json');
+const tokenPath = path.join(appDir, 'token.json');
+const eventsPath = path.join(appDir, 'events.json');
+const HOST = '127.0.0.1';
+const PORT = 8765;
+const INVITEE = 'sflourentzou@gmail.com';
+const CALENDAR_ID = 'primary';
+const OAUTH_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+
+fs.mkdirSync(appDir, { recursive: true });
+if (!fs.existsSync(eventsPath)) fs.writeFileSync(eventsPath, '[]\n');
+
+function json(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+
+function html(res, status, body) {
+  res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(body);
+}
+
+function readJson(file, fallback = null) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
+}
+
+function writePrivateJson(file, value) {
+  fs.writeFileSync(file, JSON.stringify(value, null, 2), { mode: 0o600 });
+}
+
+function readEvents() { return readJson(eventsPath, []) || []; }
+
+async function readBody(req) {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  return body ? JSON.parse(body) : {};
+}
+
+function safePublicPath(urlPath) {
+  const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+  const full = path.normalize(path.join(publicDir, rel));
+  return full.startsWith(publicDir) ? full : null;
+}
+
+function getDesktopClient() {
+  const data = readJson(credentialsPath);
+  const c = data?.installed || data?.web;
+  if (!c?.client_id || !c?.client_secret) throw new Error(`Missing Google OAuth credentials: ${credentialsPath}`);
+  return { clientId: c.client_id, clientSecret: c.client_secret };
+}
+
+async function tokenRequest(form) {
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(form)
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || data.error || 'Google OAuth token error');
+  return data;
+}
+
+async function accessToken() {
+  const saved = readJson(tokenPath);
+  if (!saved?.refresh_token) throw new Error('Google Calendar is not connected.');
+  const { clientId, clientSecret } = getDesktopClient();
+  const data = await tokenRequest({
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: saved.refresh_token,
+    grant_type: 'refresh_token'
+  });
+  return data.access_token;
+}
+
+async function gcal(pathname, options = {}) {
+  const token = await accessToken();
+  const r = await fetch(`https://www.googleapis.com/calendar/v3${pathname}`, {
+    ...options,
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(options.headers || {}) }
+  });
+  const text = await r.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!r.ok) throw new Error(data?.error?.message || `Google Calendar API ${r.status}`);
+  return data;
+}
+
+function addHours(dt, h) { return new Date(new Date(dt).getTime() + h * 3600000).toISOString(); }
+function nextDate(d) { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0,10); }
+
+function toGoogle(e, sendInvite) {
+  const body = {
+    summary: e.title,
+    location: e.location || '',
+    description: [e.description || '', e.originalSource ? `Original source: ${e.originalSource}` : ''].filter(Boolean).join('\n\n'),
+    extendedProperties: { private: { PLOS_EVENT_ID: String(e.id) } }
+  };
+  if (e.allDay) {
+    body.start = { date: e.startDate };
+    body.end = { date: e.endDate || nextDate(e.startDate) };
+  } else {
+    body.start = { dateTime: e.startDateTime, timeZone: 'Europe/Nicosia' };
+    body.end = { dateTime: e.endDateTime || addHours(e.startDateTime, 2), timeZone: 'Europe/Nicosia' };
+  }
+  if (sendInvite && e.inviteAllowed !== false) body.attendees = [{ email: INVITEE }];
+  return body;
+}
+
+async function findByPlosId(id) {
+  const q = new URLSearchParams({ privateExtendedProperty: `PLOS_EVENT_ID=${id}`, maxResults: '10', singleEvents: 'true' });
+  const data = await gcal(`/calendars/${encodeURIComponent(CALENDAR_ID)}/events?${q}`);
+  return (data.items || []).find(x => x.status !== 'cancelled') || null;
+}
+
+function byIds(ids) {
+  const map = new Map(readEvents().map(e => [String(e.id), e]));
+  return ids.map(id => map.get(String(id))).filter(Boolean);
+}
+
+async function addEvent(e, invite) {
+  const existing = await findByPlosId(e.id);
+  if (existing) return { alreadyExists: true, eventId: existing.id, htmlLink: existing.htmlLink };
+  const q = new URLSearchParams({ sendUpdates: invite && e.inviteAllowed !== false ? 'all' : 'none' });
+  const created = await gcal(`/calendars/${encodeURIComponent(CALENDAR_ID)}/events?${q}`, {
+    method: 'POST', body: JSON.stringify(toGoogle(e, invite))
+  });
+  return { alreadyExists: false, eventId: created.id, htmlLink: created.htmlLink };
+}
+
+async function deleteEvent(e) {
+  const found = await findByPlosId(e.id);
+  if (!found) return { deleted: false, reason: 'not_found' };
+  await gcal(`/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${encodeURIComponent(found.id)}?sendUpdates=all`, { method: 'DELETE' });
+  return { deleted: true };
+}
+
+async function inviteEvent(e) {
+  if (e.inviteAllowed === false) return { invited: false, reason: 'invite_not_allowed' };
+  const found = await findByPlosId(e.id);
+  if (!found) return { invited: false, reason: 'not_in_calendar' };
+  const attendees = (found.attendees || []).filter(a => (a.email || '').toLowerCase() !== INVITEE.toLowerCase());
+  attendees.push({ email: INVITEE });
+  const patched = await gcal(`/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${encodeURIComponent(found.id)}?sendUpdates=all`, {
+    method: 'PATCH', body: JSON.stringify({ attendees })
+  });
+  return { invited: true, eventId: patched.id };
+}
+
+let pendingState = null;
+
+async function route(req, res) {
+  const u = new URL(req.url, `http://${HOST}:${PORT}`);
+
+  if (u.pathname === '/api/health') {
+    return json(res, 200, {
+      ok: true,
+      localhostOnly: true,
+      credentialsPresent: fs.existsSync(credentialsPath),
+      calendarConnected: Boolean(readJson(tokenPath)?.refresh_token)
+    });
+  }
+
+  if (u.pathname === '/oauth/start') {
+    const { clientId } = getDesktopClient();
+    pendingState = crypto.randomUUID();
+    const redirectUri = `http://${HOST}:${PORT}/oauth/callback`;
+    const q = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: OAUTH_SCOPE,
+      access_type: 'offline',
+      prompt: 'consent',
+      state: pendingState
+    });
+    res.writeHead(302, { location: `https://accounts.google.com/o/oauth2/v2/auth?${q}` });
+    return res.end();
+  }
+
+  if (u.pathname === '/oauth/callback') {
+    if (!pendingState || u.searchParams.get('state') !== pendingState) throw new Error('OAuth state mismatch.');
+    const code = u.searchParams.get('code');
+    if (!code) throw new Error('Missing OAuth code.');
+    const { clientId, clientSecret } = getDesktopClient();
+    const redirectUri = `http://${HOST}:${PORT}/oauth/callback`;
+    const data = await tokenRequest({ client_id: clientId, client_secret: clientSecret, code, grant_type: 'authorization_code', redirect_uri: redirectUri });
+    if (!data.refresh_token) throw new Error('No refresh token returned by Google.');
+    writePrivateJson(tokenPath, { refresh_token: data.refresh_token });
+    pendingState = null;
+    res.writeHead(302, { location: '/?connected=1' });
+    return res.end();
+  }
+
+  if (u.pathname === '/api/events' && req.method === 'GET') return json(res, 200, { events: readEvents(), invitee: INVITEE });
+
+  if (u.pathname === '/api/import' && req.method === 'POST') {
+    const { events } = await readBody(req);
+    if (!Array.isArray(events)) return json(res, 400, { ok: false, error: 'events must be an array' });
+    writePrivateJson(eventsPath, events);
+    return json(res, 200, { ok: true, count: events.length });
+  }
+
+  if (u.pathname === '/api/status' && req.method === 'POST') {
+    const { ids = [] } = await readBody(req);
+    const out = {};
+    for (const e of byIds(ids)) {
+      const found = await findByPlosId(e.id);
+      out[e.id] = found ? { inCalendar: true, calendarEventId: found.id, htmlLink: found.htmlLink, attendees: found.attendees || [] } : { inCalendar: false };
+    }
+    return json(res, 200, out);
+  }
+
+  if (u.pathname === '/api/add' && req.method === 'POST') {
+    const { ids = [], invite = {} } = await readBody(req);
+    const results = {};
+    for (const e of byIds(ids)) results[e.id] = await addEvent(e, Boolean(invite[e.id]));
+    return json(res, 200, { ok: true, results });
+  }
+
+  if (u.pathname === '/api/delete' && req.method === 'POST') {
+    const { ids = [] } = await readBody(req);
+    const results = {};
+    for (const e of byIds(ids)) results[e.id] = await deleteEvent(e);
+    return json(res, 200, { ok: true, results });
+  }
+
+  if (u.pathname === '/api/invite' && req.method === 'POST') {
+    const { ids = [] } = await readBody(req);
+    const results = {};
+    for (const e of byIds(ids)) results[e.id] = await inviteEvent(e);
+    return json(res, 200, { ok: true, results });
+  }
+
+  const file = safePublicPath(u.pathname);
+  if (!file || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return html(res, 404, 'Not found');
+  const ext = path.extname(file);
+  const type = ext === '.css' ? 'text/css' : ext === '.js' ? 'text/javascript' : 'text/html';
+  res.writeHead(200, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });
+  fs.createReadStream(file).pipe(res);
+}
+
+const server = http.createServer((req, res) => route(req, res).catch(err => {
+  console.error(err);
+  json(res, 500, { ok: false, error: err.message || String(err) });
+}));
+
+server.listen(PORT, HOST, () => {
+  console.log(`PLOS Events LOCAL ONLY: http://${HOST}:${PORT}`);
+  console.log(`Private data folder: ${appDir}`);
+});
