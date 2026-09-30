@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PERSONAL LIFE OS — Εκδηλώσεις</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="topbar">
+      <div>
+        <h1>PERSONAL LIFE OS — Εκδηλώσεις</h1>
+        <p>Επιλογή, Google Calendar, προσκλήσεις και διαχείριση καταχωρίσεων.</p>
+      </div>
+      <button id="refreshBtn" class="secondary">Ανανέωση</button>
+    </header>
+
+    <section class="toolbar">
+      <label><input type="checkbox" id="selectAll" /> Επιλογή όλων</label>
+      <button id="addSelected">Καταχώριση επιλεγμένων</button>
+      <button id="inviteSelected" class="secondary">Αποστολή προσκλήσεων</button>
+      <button id="deleteSelected" class="danger">Delete selected from Calendar</button>
+      <span id="statusText"></span>
+    </section>
+
+    <section id="events"></section>
+  </main>
+
+  <template id="eventTemplate">
+    <article class="event-card">
+      <div class="event-select"><input type="checkbox" class="select-event" /></div>
+      <div class="event-content">
+        <div class="event-title-row">
+          <span class="event-number"></span>
+          <h2 class="event-title"></h2>
+          <span class="limassol-badge hidden">ΛΕΜΕΣΟΣ</span>
+          <span class="calendar-badge hidden">ΗΔΗ ΣΤΟ ΗΜΕΡΟΛΟΓΙΟ</span>
+        </div>
+        <div class="meta"></div>
+        <p class="description"></p>
+        <div class="links">
+          <a class="source-link" target="_blank" rel="noopener">Original Source</a>
+          <a class="google-link" target="_blank" rel="noopener">➕ Google Calendar</a>
+        </div>
+        <div class="invite-row">
+          <label><input type="checkbox" class="invite-checkbox" /> Αποστολή πρόσκλησης με email</label>
+          <button class="invite-now secondary hidden">Αποστολή πρόσκλησης τώρα</button>
+          <button class="delete-one danger hidden">Delete from Calendar</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>
