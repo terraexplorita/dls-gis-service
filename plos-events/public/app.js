@@ -5,6 +5,8 @@ let defaultInvitee = 'sflourentzou@gmail.com';
 const $events = document.getElementById('events');
 const template = document.getElementById('eventTemplate');
 const statusText = document.getElementById('statusText');
+const connectionStatus = document.getElementById('connectionStatus');
+const connectGoogle = document.getElementById('connectGoogle');
 
 function fmtDate(e){
   if(e.allDay) return e.startDate + (e.endDate && e.endDate!==e.startDate ? ` → ${e.endDate}` : '');
@@ -37,6 +39,24 @@ async function post(url,body){
   const data=await r.json();
   if(!r.ok) throw new Error(data.error||'Request failed');
   return data;
+}
+
+async function refreshHealth(){
+  try{
+    const h=await fetch('/api/health',{cache:'no-store'}).then(r=>r.json());
+    if(h.calendarConnected){
+      connectionStatus.textContent='Google Calendar: ΣΥΝΔΕΔΕΜΕΝΟ';
+      connectGoogle.classList.add('hidden');
+    }else if(!h.oauthClientConfigured){
+      connectionStatus.textContent='Google Calendar: χρειάζεται OAuth client στο Render';
+      connectGoogle.classList.add('hidden');
+    }else{
+      connectionStatus.textContent='Google Calendar: δεν έχει δοθεί ακόμη εξουσιοδότηση';
+      connectGoogle.classList.remove('hidden');
+    }
+  }catch{
+    connectionStatus.textContent='Google Calendar: αδυναμία ελέγχου σύνδεσης';
+  }
 }
 
 function render(){
@@ -74,6 +94,7 @@ function render(){
 }
 
 async function refresh(){
+  await refreshHealth();
   statusText.textContent='Ανανέωση…';
   const d=await fetch('/api/events',{cache:'no-store'}).then(r=>r.json());
   events=d.events||[]; defaultInvitee=d.defaultInvitee||defaultInvitee;
