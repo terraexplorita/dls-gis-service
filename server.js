@@ -22,7 +22,7 @@ async function query(base,params,retries=3){
   let last;
   for(let i=1;i<=retries;i++){
     try{
-      const r=await fetch(u,{signal:AbortSignal.timeout(15000),headers:{'user-agent':'dls-gis-service/3.0'}});
+      const r=await fetch(u,{signal:AbortSignal.timeout(15000),headers:{'user-agent':'dls-gis-service/3.2'}});
       if(!r.ok)throw new Error(`HTTP ${r.status}`);
       const j=await r.json();
       if(j.error)throw new Error(j.error.message||'DLS error');
@@ -85,7 +85,7 @@ async function basemap(ext,w,h){
     try{
       const u=new URL(EXPORT);
       for(const[k,v]of Object.entries({bbox:`${ext.xmin},${ext.ymin},${ext.xmax},${ext.ymax}`,bboxSR:CRS,imageSR:CRS,size:`${w},${h}`,dpi:96,format:'png32',transparent:false,f:'image'}))u.searchParams.set(k,String(v));
-      const r=await fetch(u,{signal:AbortSignal.timeout(15000),headers:{'user-agent':'dls-gis-service/3.0'}});
+      const r=await fetch(u,{signal:AbortSignal.timeout(15000),headers:{'user-agent':'dls-gis-service/3.2'}});
       if(!r.ok)throw new Error(`export ${r.status}`);
       const ct=r.headers.get('content-type')||'';
       if(!ct.includes('image'))throw new Error(`export ${ct}`);
@@ -111,9 +111,9 @@ async function render(group,mpp=2){
   const roadSvg=rs.map(f=>(f.geometry?.paths||[]).map(r=>`<path d="${r.map(([x,y],i)=>`${i?'L':'M'}${tx(x).toFixed(1)},${ty(y).toFixed(1)}`).join(' ')}" fill="none" stroke="#2869b8" stroke-width="2" stroke-opacity=".72" vector-effect="non-scaling-stroke"/>`).join('')).join('');
   const polys=items.map(({key,p,f})=>{
     const partial=p.kind==='owned'&&p.share&&p.share!=='100%';
-    const fill=p.kind==='owned'?(partial?'#0b8f3a':'#32a852'):'#e8562a';
-    const stroke=p.kind==='owned'?(partial?'#054d21':'#0b6a2c'):'#9b2d13';
-    return`<a href="/property/${key}" target="_top" data-property-key="${key}"><path data-property-key="${key}" d="${svgPath(f,tx,ty)}" fill="${fill}" fill-opacity="${partial?'.72':'.58'}" stroke="${stroke}" stroke-width="${partial?'3.2':'2.2'}" vector-effect="non-scaling-stroke"><title>${esc(p.code)} — ${esc(p.title)}</title></path></a>`;
+    const fill=p.kind==='owned'?(partial?'#9bdba8':'#176b32'):'#e8562a';
+    const stroke=p.kind==='owned'?(partial?'#3f8f55':'#0a4720'):'#9b2d13';
+    return`<a href="/property/${key}" target="_top" data-property-key="${key}"><path data-property-key="${key}" d="${svgPath(f,tx,ty)}" fill="${fill}" fill-opacity="${partial?'.76':'.68'}" stroke="${stroke}" stroke-width="${partial?'3':'2.6'}" vector-effect="non-scaling-stroke"><title>${esc(p.code)} — ${esc(p.title)}</title></path></a>`;
   }).join('');
   const missingAttr=esc(missing.join(','));
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${mapW}" height="${mapH}" viewBox="0 0 ${mapW} ${mapH}" data-missing-parcels="${missingAttr}"><rect width="100%" height="100%" fill="#f5f5f2"/>${bgSvg}${roadSvg}${polys}</svg>`;
@@ -123,7 +123,7 @@ async function render(group,mpp=2){
 const server=http.createServer(async(req,res)=>{
   try{
     const u=new URL(req.url,'http://local');
-    if(u.pathname==='/health')return json(res,200,{ok:true,version:'3.0',crs:CRS});
+    if(u.pathname==='/health')return json(res,200,{ok:true,version:'3.2',crs:CRS});
     if(u.pathname==='/api/properties')return json(res,200,properties);
     if(u.pathname==='/verify')return json(res,200,{ok:true,note:'verification is non-blocking; use map endpoints for live DLS status'});
     if(u.pathname==='/map.svg'){
@@ -139,4 +139,4 @@ const server=http.createServer(async(req,res)=>{
     return json(res,404,{error:'Not found'});
   }catch(e){console.error(e);return json(res,500,{error:e.message});}
 });
-server.listen(PORT,()=>console.log(`DLS GIS core v3.0 listening on ${PORT}`));
+server.listen(PORT,()=>console.log(`DLS GIS core v3.2 listening on ${PORT}`));
