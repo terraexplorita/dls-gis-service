@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node viewer.js",
+    "start": "node bootstrap.js",
     "verify": "node selftest.js",
     "test": "node test.js"
   },
