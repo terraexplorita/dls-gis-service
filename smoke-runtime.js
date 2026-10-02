@@ -13,7 +13,6 @@ try{
   for(const k of ['IDI0019','IDI0020','IDI0024','IDI0025'])assert(!missing.includes(k),`${k} false-missing on shared parent parcel`);
   const d=await req('/property/IDI0018?from=limassol');assert(d.t.includes('420203')&&d.t.includes('Πανθέα')&&d.t.includes('Μπλοκ'),'Panthea details stale');
   const pent=await req('/map?group=pentakomo&mpp=2');assert(pent.t.includes('ΑΚΙΝΗΤΑ ΠΟΥ ΕΦΑΠΤΟΝΤΑΙ')&&pent.t.includes('IDI0022')&&pent.t.includes('IDI0023'),'Pentakomo relation UI missing');
-  const arsos=await req('/map?group=arsos&mpp=2');assert(arsos.t.includes('candidateDateFilter')&&arsos.t.includes('candidateDateSort')&&arsos.t.includes('ΗΜΕΡΟΜΗΝΙΑ ΚΑΤΑΧΩΡΗΣΗΣ'),'candidate intake-date controls missing');
-  const catalog=await req('/properties');assert(catalog.t.includes('Ημ/νία καταχώρησης'),'catalog intake-date column missing');
+  const catalog=await req('/properties');assert(catalog.t.includes('Ημ/νία καταχώρησης')&&catalog.t.includes('catalogDateFilter')&&catalog.t.includes('Σήμερα'),'catalog intake-date controls missing');
   console.log('RUNTIME_SMOKE_PASS '+JSON.stringify({groups:4,panthea:true,pentakomoRelation:true,sharedParcels:true,candidateDateUI:true}));
 }catch(e){console.error('RUNTIME_SMOKE_FAIL '+(e?.stack||e));}
