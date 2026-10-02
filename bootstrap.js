@@ -16,29 +16,24 @@ replaceOnce(
   'hires raster layer order'
 );
 
-// Render the embedded SVG at its actual zoomed CSS size instead of scaling the whole
-// <object> as one composited bitmap. This keeps vector cadastral lines crisp at zoom.
+// Render the embedded SVG at its actual zoomed CSS size instead of scaling the whole object bitmap.
 replaceOnce(
   "const apply=()=>{clamp();obj.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')';};",
   "const apply=()=>{clamp();obj.style.transform='none';obj.style.left=x+'px';obj.style.top=y+'px';obj.style.width=(mapW*scale)+'px';obj.style.height=(mapH*scale)+'px';};",
   'actual-size SVG rendering'
 );
 
-// With actual-size rendering, embedded-document pointer coordinates are screen/CSS pixels.
+// screenX/screenY are independent of the embedded SVG coordinate system and remain 1:1 at any zoom.
 replaceOnce(
   "lastX=e.clientX*scale;lastY=e.clientY*scale;",
-  "lastX=e.clientX;lastY=e.clientY;",
-  'pointerdown coordinates'
+  "lastX=e.screenX;lastY=e.screenY;",
+  'pointerdown screen coordinates'
 );
-
-// During drag, move exactly with the pointer and avoid clamping every pointer event.
 replaceOnce(
   "const sx=e.clientX*scale,sy=e.clientY*scale,dx=sx-lastX,dy=sy-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=sx;lastY=sy;apply();e.preventDefault();",
-  "const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=e.clientX;lastY=e.clientY;obj.style.left=x+'px';obj.style.top=y+'px';e.preventDefault();",
-  'pointermove pan'
+  "const dx=e.screenX-lastX,dy=e.screenY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=e.screenX;lastY=e.screenY;obj.style.left=x+'px';obj.style.top=y+'px';e.preventDefault();",
+  'pointermove 1:1 pan'
 );
-
-// Clamp once, after dragging finishes.
 replaceOnce(
   "drag=false;wrap.classList.remove('dragging');save();scheduleRasterRefresh(120);",
   "drag=false;wrap.classList.remove('dragging');apply();save();scheduleRasterRefresh(120);",
@@ -57,11 +52,61 @@ replaceOnce(
   'hires raster dpi'
 );
 
+// Split relation list into touching / very close / close.
+replaceOnce(
+  "const rel=confirmedRelations[group]||{touching:[],close:[]};",
+  "const rel=confirmedRelations[group]||{touching:[],close:[]};const veryClose=rel.close.filter(x=>Number(x[2])<=50),near=rel.close.filter(x=>Number(x[2])>50);",
+  'relation buckets'
+);
+replaceOnce(
+  "const pair=([a,b,d],touching=false)=>{const label=touching?'ΕΦΑΠΤΕΤΑΙ':d<=50?'ΠΑΡΑ ΠΟΛΥ ΚΟΝΤΑ':'ΠΟΛΥ ΚΟΝΤΑ';const distance=touching?'0 m':`${num(d)} m`;return `<div class=\"relcard\" data-hover-pair=\"${a},${b}\"><div class=\"relpair\">${propLink(a)}<span class=\"arrow\">↔</span>${propLink(b)}</div><div class=\"reldist\">${distance} — ${label}</div></div>`;};",
+  "const pair=([a,b,d],touching=false)=>{const label=touching?'ΕΦΑΠΤΕΤΑΙ':Number(d)<=50?'ΠΟΛΥ ΚΟΝΤΑ':'ΚΟΝΤΑ';const distance=touching?'0 m':`${num(d)} m`;return `<div class=\"relcard\" data-hover-pair=\"${a},${b}\"><div class=\"relpair\">${propLink(a)}<span class=\"arrow\">↔</span>${propLink(b)}</div><div class=\"reldist\">${distance} — ${label}</div></div>`;};",
+  'relation labels'
+);
+replaceOnce(
+  "const close=rel.close.length?rel.close.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';\n  return `<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΦΑΠΤΟΝΤΑΙ</h2>${touch}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΠΟΛΥ ΚΟΝΤΑ</h2>${close}`;",
+  "const very=veryClose.length?veryClose.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';const close=near.length?near.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';\n  return `<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΦΑΠΤΟΝΤΑΙ</h2>${touch}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΠΟΛΥ ΚΟΝΤΑ</h2>${very}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΚΟΝΤΑ</h2>${close}`;",
+  'relation sections'
+);
+
+// Add top/bottom buttons to return to the top of the property sidebar.
+replaceOnce(
+  "return `<div class=\"vsideHead\"><a class=\"allprops\" href=\"/properties\">ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ</a></div>${relationBlock(group)}<h2 class=\"sectionTitle\">ΙΔΙΟΚΤΗΤΑ ΑΚΙΝΗΤΑ</h2>${filters}<div id=\"ownedList\">${owned}</div><h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΡΟΣ ΑΓΟΡΑ</h2><div id=\"candidateList\">${candidates}</div>`;",
+  "return `<div class=\"vsideHead\"><a class=\"allprops\" href=\"/properties\">ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ</a><button class=\"toTop\" type=\"button\" data-to-top>↑ ΚΟΡΥΦΗ</button></div>${relationBlock(group)}<h2 class=\"sectionTitle\">ΙΔΙΟΚΤΗΤΑ ΑΚΙΝΗΤΑ</h2>${filters}<div id=\"ownedList\">${owned}</div><h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΡΟΣ ΑΓΟΡΑ</h2><div id=\"candidateList\">${candidates}</div><div class=\"bottomTop\"><button class=\"toTop\" type=\"button\" data-to-top>↑ ΚΟΡΥΦΗ</button></div>`;",
+  'sidebar top buttons'
+);
+replaceOnce(
+  ".vsideHead{display:flex;justify-content:flex-end;position:sticky;top:-16px;background:#fff;padding:4px 0 12px;z-index:4}.allprops{background:#111;color:#fff!important;padding:10px 13px;border-radius:6px;text-decoration:none;font-weight:700}",
+  ".vsideHead{display:flex;justify-content:flex-end;gap:8px;position:sticky;top:-16px;background:#fff;padding:4px 0 12px;z-index:4}.allprops{background:#111;color:#fff!important;padding:10px 13px;border-radius:6px;text-decoration:none;font-weight:700}.toTop{border:1px solid #777;background:#fff;color:#111;padding:9px 11px;border-radius:6px;font-weight:800;cursor:pointer}.bottomTop{display:flex;justify-content:flex-end;padding:8px 0 2px}",
+  'sidebar top button styles'
+);
+
+// When hovering a related parcel on the map, reveal the relation card first, not the later property row.
+replaceOnce(
+  "const setListHighlight=(key,on,reveal=false)=>{const row=rowFor(key);if(row)row.classList.toggle('is-hover',on);relationLinksFor(key).forEach(a=>a.classList.toggle('is-hover',on));relationCardsFor(key).forEach(c=>c.classList.toggle('is-hover',on));if(on&&reveal)revealRow(key);};",
+  "const revealRelation=key=>{const cards=relationCardsFor(key);if(!cards.length)return false;const card=cards[0];requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),cr=card.getBoundingClientRect();if(cr.top<sr.top+30||cr.bottom>sr.bottom-30){const target=side.scrollTop+(cr.top-sr.top)-(side.clientHeight/2)+(cr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});return true;};const setListHighlight=(key,on,reveal=false)=>{const row=rowFor(key);if(row)row.classList.toggle('is-hover',on);relationLinksFor(key).forEach(a=>a.classList.toggle('is-hover',on));relationCardsFor(key).forEach(c=>c.classList.toggle('is-hover',on));if(on&&reveal&&!revealRelation(key))revealRow(key);};",
+  'relation-first reveal'
+);
+
+// Hide duplicate vector parcel-number labels: DLS raster already carries the readable parcel labels.
+replaceOnce(
+  "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;markMissing(svg);",
+  "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;const clarityStyle=doc.createElementNS('http://www.w3.org/2000/svg','style');clarityStyle.textContent='.parcel-number{display:none!important}';svg.appendChild(clarityStyle);markMissing(svg);",
+  'hide duplicate parcel labels'
+);
+
+// Wire both return-to-top buttons.
+replaceOnce(
+  "document.querySelectorAll('a[data-detail]').forEach(a=>a.addEventListener('click',save));",
+  "document.querySelectorAll('a[data-detail]').forEach(a=>a.addEventListener('click',save));document.querySelectorAll('[data-to-top]').forEach(b=>b.addEventListener('click',()=>side.scrollTo({top:0,behavior:'smooth'})));",
+  'top button behavior'
+);
+
 // Greek UI labels requested during acceptance testing.
 s=s.replaceAll('>Details</a>','>ΠΛΗΡΟΦΟΡΙΕΣ</a>')
    .replaceAll('>Source ↗</a>','>ΠΗΓΗ ↗</a>')
    .replaceAll('χωρίς source','χωρίς πηγή');
 
-s=s.replaceAll('v=3.7','v=3.9').replaceAll('viewer v3.7','viewer v3.9');
+s=s.replaceAll('v=3.7','v=3.10').replaceAll('viewer v3.7','viewer v3.10');
 writeFileSync(runtimePath,s,'utf8');
 await import('./viewer.runtime.js');
