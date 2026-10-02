@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node bootstrap.js",
+    "start": "node bootstrap2.js",
     "verify": "node selftest.js",
     "test": "node test.js"
   },
