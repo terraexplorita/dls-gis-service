@@ -40,11 +40,11 @@ replaceOnce(
   'pointerup clamp'
 );
 
-// Give the visible-viewport DLS refresh more pixel headroom on high-density displays.
+// Request substantially more raster pixels than screen pixels even on DPR=1 displays.
 replaceOnce(
   "const dpr=Math.min(2,window.devicePixelRatio||1),outW=Math.max(512,Math.min(3072,Math.round(wrap.clientWidth*dpr))),outH=Math.max(512,Math.min(3072,Math.round(wrap.clientHeight*dpr)));",
-  "const dpr=Math.min(3,window.devicePixelRatio||1),outW=Math.max(768,Math.min(4096,Math.round(wrap.clientWidth*dpr))),outH=Math.max(768,Math.min(4096,Math.round(wrap.clientHeight*dpr)));",
-  'hires raster output size'
+  "const quality=Math.min(4,Math.max(2.5,(window.devicePixelRatio||1)*2)),outW=Math.max(1280,Math.min(4096,Math.round(wrap.clientWidth*quality))),outH=Math.max(1280,Math.min(4096,Math.round(wrap.clientHeight*quality)));",
+  'hires raster output density'
 );
 replaceOnce(
   "u.searchParams.set('dpi',scale>=8?'192':'144');",
@@ -81,6 +81,18 @@ replaceOnce(
   'sidebar top button styles'
 );
 
+// Add a viewer-level loading overlay that remains visible until the inner SVG reports map readiness.
+replaceOnce(
+  ".hint{position:absolute;left:14px;bottom:14px;background:#fffffff0;padding:8px 11px;border-radius:6px;font-size:13px;z-index:4}",
+  ".hint{position:absolute;left:14px;bottom:14px;background:#fffffff0;padding:8px 11px;border-radius:6px;font-size:13px;z-index:4}@keyframes viewerBlink{0%,100%{opacity:1}50%{opacity:.3}}.viewerLoading{position:absolute;z-index:20;left:50%;top:20px;transform:translateX(-50%);background:#111;color:#fff;padding:11px 18px;border-radius:8px;font-weight:900;box-shadow:0 2px 8px #0005;animation:viewerBlink 1s infinite;pointer-events:none}",
+  'viewer loading style'
+);
+replaceOnce(
+  "<object id=\"mapobj\" class=\"mapobj\" data=\"/map.svg?group=${encodeURIComponent(group)}&mpp=${mpp}&v=3.7\" type=\"image/svg+xml\"></object><div class=\"mapLegend\">",
+  "<object id=\"mapobj\" class=\"mapobj\" data=\"/map.svg?group=${encodeURIComponent(group)}&mpp=${mpp}&v=3.7\" type=\"image/svg+xml\"></object><div class=\"viewerLoading\" id=\"viewerLoading\">ΦΟΡΤΩΣΗ ΧΑΡΤΗ…</div><div class=\"mapLegend\">",
+  'viewer loading markup'
+);
+
 // When hovering a related parcel on the map, reveal the relation card first, not the later property row.
 replaceOnce(
   "const setListHighlight=(key,on,reveal=false)=>{const row=rowFor(key);if(row)row.classList.toggle('is-hover',on);relationLinksFor(key).forEach(a=>a.classList.toggle('is-hover',on));relationCardsFor(key).forEach(c=>c.classList.toggle('is-hover',on));if(on&&reveal)revealRow(key);};",
@@ -88,11 +100,25 @@ replaceOnce(
   'relation-first reveal'
 );
 
+// Use a topmost SVG clone for property highlighting so it remains visible after zoom/raster refresh.
+replaceOnce(
+  "const setMapHighlight=(key,on)=>{const p=parcelPath(key);if(!p)return;if(on){if(!p.dataset.hlStroke){p.dataset.hlStroke=p.getAttribute('stroke')||'';p.dataset.hlWidth=p.getAttribute('stroke-width')||'';p.dataset.hlOpacity=p.getAttribute('fill-opacity')||'';}p.setAttribute('stroke','#ffd400');p.setAttribute('stroke-width','7');p.setAttribute('fill-opacity','.96');p.style.filter='drop-shadow(0 0 6px #ffcc00)';}else{if(p.dataset.hlStroke)p.setAttribute('stroke',p.dataset.hlStroke);if(p.dataset.hlWidth)p.setAttribute('stroke-width',p.dataset.hlWidth);if(p.dataset.hlOpacity)p.setAttribute('fill-opacity',p.dataset.hlOpacity);p.style.filter='';}};",
+  "const setMapHighlight=(key,on)=>{if(!svgDoc)return;const id='active-highlight-'+key;const old=svgDoc.getElementById(id);if(!on){if(old)old.remove();return;}if(old)return;const p=parcelPath(key);if(!p)return;const clone=p.cloneNode(true);clone.setAttribute('id',id);clone.removeAttribute('data-property-key');clone.setAttribute('pointer-events','none');clone.setAttribute('fill','#ffd400');clone.setAttribute('fill-opacity','.28');clone.setAttribute('stroke','#ffbf00');clone.setAttribute('stroke-width','10');clone.setAttribute('stroke-opacity','1');clone.setAttribute('vector-effect','non-scaling-stroke');clone.style.filter='drop-shadow(0 0 7px #ffcc00)';svgDoc.documentElement.appendChild(clone);};",
+  'topmost map highlight clone'
+);
+
 // Hide duplicate vector parcel-number labels: DLS raster already carries the readable parcel labels.
 replaceOnce(
   "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;markMissing(svg);",
   "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;const clarityStyle=doc.createElementNS('http://www.w3.org/2000/svg','style');clarityStyle.textContent='.parcel-number{display:none!important}';svg.appendChild(clarityStyle);markMissing(svg);",
   'hide duplicate parcel labels'
+);
+
+// Poll the inner SVG readiness flags and hide the outer loading overlay only when map layers are ready.
+replaceOnce(
+  "loaded=true;if(!restore())fit();sessionStorage.setItem('lastMapGroup',GROUP);scheduleRasterRefresh(120);",
+  "loaded=true;if(!restore())fit();sessionStorage.setItem('lastMapGroup',GROUP);scheduleRasterRefresh(120);const loadingEl=document.getElementById('viewerLoading');let readyChecks=0;const readyTimer=setInterval(()=>{readyChecks++;const root=svgDoc?.documentElement,base=root?.getAttribute('data-basemap-loaded'),cad=root?.getAttribute('data-cadastral-loaded');if((base==='1'&&(cad==='1'||cad==='error'))||readyChecks>200){clearInterval(readyTimer);if(loadingEl)loadingEl.style.display='none';}},100);",
+  'viewer loading readiness'
 );
 
 // Wire both return-to-top buttons.
@@ -107,6 +133,6 @@ s=s.replaceAll('>Details</a>','>ΠΛΗΡΟΦΟΡΙΕΣ</a>')
    .replaceAll('>Source ↗</a>','>ΠΗΓΗ ↗</a>')
    .replaceAll('χωρίς source','χωρίς πηγή');
 
-s=s.replaceAll('v=3.7','v=3.10').replaceAll('viewer v3.7','viewer v3.10');
+s=s.replaceAll('v=3.7','v=3.11').replaceAll('viewer v3.7','viewer v3.11');
 writeFileSync(runtimePath,s,'utf8');
 await import('./viewer.runtime.js');
