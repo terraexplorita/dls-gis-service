@@ -50,32 +50,55 @@ v=v.replace('<a href="/map?group=arsos&mpp=2">Χάρτης Άρσους</a><a hr
 v=replaceOnce(v,"document.getElementById('sideToggle').onclick=()=>side.classList.toggle('open');applyOwnedFilters();","const areaNav=document.getElementById('areaNav');if(areaNav)areaNav.addEventListener('change',()=>{if(areaNav.value&&areaNav.value!==GROUP){save();location.href='/map?group='+encodeURIComponent(areaNav.value)+'&mpp=2';}});document.getElementById('sideToggle').onclick=()=>side.classList.toggle('open');applyOwnedFilters();",'area selector behavior');
 v=v.replace("group==='arsos'?'Χάρτης Άρσους':'Χάρτης Αγίου Νικολάου'","'Χάρτης '+(mapGroups[group]?.community||municipalityText(p)||group)");
 
+// User-confirmed adjacency in Pentakomo: Governors small and large fields touch.
+v=v.replace("pafos:{touching:[['IDI0008','IDI0010',0]],close:[]}","pafos:{touching:[['IDI0008','IDI0010',0]],close:[]},\n  pentakomo:{touching:[['IDI0022','IDI0023',0]],close:[]}");
+
 // Replace hidden Arsos default with an all-areas landing; any valid dynamic group is accepted.
 v=replaceOnce(v,"if(u.pathname==='/map'){const group=u.searchParams.get('group')||'arsos',mpp=Number(u.searchParams.get('mpp')||2),page=mapPage(group,mpp);","if(u.pathname==='/'||(u.pathname==='/map'&&!u.searchParams.get('group'))){const page=areaLandingPage();res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store'});return res.end(page);}if(u.pathname==='/map'){const group=u.searchParams.get('group'),mpp=Number(u.searchParams.get('mpp')||2),page=mapPage(group,mpp);",'all areas landing route');
 v=replaceOnce(v,"if(req.method==='GET'&&u.pathname==='/map.svg'&&['arsos','pafos'].includes(u.searchParams.get('group')||'arsos')&&Number(u.searchParams.get('mpp')||2)===2)","if(req.method==='GET'&&u.pathname==='/map.svg'&&mapGroups[u.searchParams.get('group')||'']?.isAreaGroup&&Number(u.searchParams.get('mpp')||2)===2)",'generic map svg cache route');
 writeFileSync('./viewer.js',v,'utf8');
 
-// 3) Generalize DLS area resolution. Arsos/Pafos keep verified codes; new groups
-// are resolved from an exact cadastral locator already present in that group.
-c=replaceOnce(c,"const AREA={arsos:{dist:5,vil:322},pafos:{dist:6,vil:218}};","const AREA_CACHE=new Map([['arsos',{dist:5,vil:322}],['pafos',{dist:6,vil:218}]]);",'area cache');
-const resolver=`
-async function resolveArea(group,props=[]){
-  if(AREA_CACHE.has(group))return AREA_CACHE.get(group);
-  const p=(props||[]).find(hasLocator);
-  if(!p)throw new Error('No cadastral locator available to resolve area '+group);
-  const q=x=>String(x).replaceAll("'","''");
-  const where="SHEET='"+q(p.sheet)+"' AND PLAN_NBR='"+q(p.plan)+"' AND BLCK_CODE="+Number(p.block)+" AND PARCEL_NBR="+Number(p.parcel);
-  const j=await query(PARCELS,{f:'json',where,outFields:'DIST_CODE,VIL_CODE,BLCK_CODE,PARCEL_NBR,SHEET,PLAN_NBR',returnGeometry:false,resultRecordCount:50},2,8000);
-  const exact=(j.features||[]).filter(f=>exactFeature([f],p));
-  const uniq=new Map();
-  for(const f of exact){const a=f.attributes||{},dist=Number(a.DIST_CODE),vil=Number(a.VIL_CODE);if(Number.isFinite(dist)&&Number.isFinite(vil))uniq.set(dist+'|'+vil,{dist,vil});}
-  if(uniq.size!==1)throw new Error('Could not uniquely resolve DLS area for '+group+' from '+(p.code||p.title||p.parcel));
-  const ac=[...uniq.values()][0];AREA_CACHE.set(group,ac);console.log('DLS area resolved',group,ac);return ac;
-}
-`;
-c=replaceOnce(c,'\nconst propertyBatchCache=new Map();','\n'+resolver+'\nconst propertyBatchCache=new Map();','dynamic area resolver');
-c=replaceOnce(c,"const ac=AREA[group];if(!ac)throw new Error(`Unsupported area ${group}`);","const ac=await resolveArea(group,props);",'fetchPropertyBatch area');
-c=replaceOnce(c,"const ac=AREA[group];if(!ac)return[];const all=[];","const ac=await resolveArea(group,(mapGroups[group]?.keys||[]).map(k=>properties[k]).filter(Boolean));const all=[];",'cadastral area');
+// 3) Generic DLS matching by exact cadastral locator within district.
+// Do NOT assume that every property in a human area group shares one VIL_CODE.
+const districtCodeExpr="const DISTRICT_CODE={'Λεμεσός':5,'ΛΕΜΕΣΟΣ':5,'LEMESOS':5,'Πάφος':6,'ΠΑΦΟΣ':6,'PAFOS':6};const districtCode=p=>DISTRICT_CODE[p?.district]||null;";
+c=replaceOnce(c,"const AREA={arsos:{dist:5,vil:322},pafos:{dist:6,vil:218}};",districtCodeExpr,'district code mapping');
+
+const oldFetch=`async function fetchPropertyBatch(group,props){
+  const ac=AREA[group];if(!ac)throw new Error(\`Unsupported area \${group}\`);
+  const nums=[...new Set(props.filter(hasLocator).map(p=>Number(p.parcel)).filter(Number.isFinite))];
+  if(!nums.length)return[];
+  const parcelWhere=nums.map(n=>\`PARCEL_NBR=\${n}\`).join(' OR ');
+  const where=\`DIST_CODE=\${ac.dist} AND VIL_CODE=\${ac.vil} AND (\${parcelWhere})\`;
+  const j=await query(PARCELS,{f:'json',where,outFields:'SBPI_ID_NO,DIST_CODE,VIL_CODE,BLCK_CODE,PARCEL_NBR,SHEET,PLAN_NBR,OBJECTID,SHAPE.STArea()',returnGeometry:true,outSR:CRS,returnZ:false,resultRecordCount:1000},2,8000);
+  return j.features||[];
+}`;
+const newFetch=`async function fetchPropertyBatch(group,props){
+  const loc=props.filter(hasLocator),clauses=[];
+  for(const p of loc){const dist=districtCode(p);if(!dist)continue;const q=x=>String(x).replaceAll("'","''");clauses.push("(DIST_CODE="+dist+" AND SHEET='"+q(p.sheet)+"' AND PLAN_NBR='"+q(p.plan)+"' AND BLCK_CODE="+Number(p.block)+" AND PARCEL_NBR="+Number(p.parcel)+")");}
+  if(!clauses.length)return[];
+  const where=clauses.join(' OR ');
+  const j=await query(PARCELS,{f:'json',where,outFields:'SBPI_ID_NO,DIST_CODE,VIL_CODE,BLCK_CODE,PARCEL_NBR,SHEET,PLAN_NBR,OBJECTID,SHAPE.STArea()',returnGeometry:true,outSR:CRS,returnZ:false,resultRecordCount:1000},2,10000);
+  return j.features||[];
+}`;
+c=replaceOnce(c,oldFetch,newFetch,'exact per-property district locator batch');
+
+const oldCad=`async function cadastralParcels(group,ext){
+  const ac=AREA[group];if(!ac)return[];const all=[];
+  for(let offset=0,page=0;page<5;page++,offset+=1000){
+    const j=await query(PARCELS,{f:'json',where:\`DIST_CODE=\${ac.dist} AND VIL_CODE=\${ac.vil}\`,geometry:\`\${ext.xmin},\${ext.ymin},\${ext.xmax},\${ext.ymax}\`,geometryType:'esriGeometryEnvelope',inSR:CRS,outSR:CRS,spatialRel:'esriSpatialRelIntersects',outFields:'OBJECTID,PARCEL_NBR,BLCK_CODE,SHEET,PLAN_NBR',returnGeometry:true,returnZ:false,resultOffset:offset,resultRecordCount:1000,orderByFields:'OBJECTID'},2,10000);
+    const fs=j.features||[];all.push(...fs);if(!j.exceededTransferLimit||fs.length<1000)break;
+  }
+  return all;
+}`;
+const newCad=`async function cadastralParcels(group,ext){
+  const groupProps=(mapGroups[group]?.keys||[]).map(k=>properties[k]).filter(Boolean),districts=[...new Set(groupProps.map(districtCode).filter(Boolean))];if(!districts.length)return[];const where=districts.length===1?'DIST_CODE='+districts[0]:'('+districts.map(d=>'DIST_CODE='+d).join(' OR ')+')',all=[];
+  for(let offset=0,page=0;page<8;page++,offset+=1000){
+    const j=await query(PARCELS,{f:'json',where,geometry:\`\${ext.xmin},\${ext.ymin},\${ext.xmax},\${ext.ymax}\`,geometryType:'esriGeometryEnvelope',inSR:CRS,outSR:CRS,spatialRel:'esriSpatialRelIntersects',outFields:'OBJECTID,PARCEL_NBR,BLCK_CODE,SHEET,PLAN_NBR',returnGeometry:true,returnZ:false,resultOffset:offset,resultRecordCount:1000,orderByFields:'OBJECTID'},2,12000);
+    const fs=j.features||[];all.push(...fs);if(!j.exceededTransferLimit||fs.length<1000)break;
+  }
+  return all;
+}`;
+c=replaceOnce(c,oldCad,newCad,'district viewport cadastral overlay');
 
 // Keep only the viewer-level loader created by bootstrap.js. Remove the core SVG loader
 // before first paint, which eliminates the visible duplicate.
