@@ -12,6 +12,9 @@ s=s.replace("for(const p of loc){const dist=districtCode(p);if(!dist)continue;co
 // Never choose the first feature when an exact cadastral tuple is ambiguous; no loose fallback.
 s=s.replace("writeFileSync('./server.js',c,'utf8');","c=replaceOnce(c,\"function safeFeature(fs,p){const exact=exactFeature(fs,p);if(exact)return exact;const loose=(fs||[]).filter(f=>{const a=f.attributes||{};return Number(a.BLCK_CODE)===Number(p.block)&&Number(a.PARCEL_NBR)===Number(p.parcel);});if(loose.length===1){console.warn(`PARCEL_LOOSE_MATCH ${p.code||p.title||p.parcel}`);return loose[0];}return null;}\",\"function safeFeature(fs,p){let exact=(fs||[]).filter(f=>{const a=f.attributes||{};return Number(a.BLCK_CODE)===Number(p.block)&&Number(a.PARCEL_NBR)===Number(p.parcel)&&norm(a.SHEET)===norm(p.sheet)&&norm(a.PLAN_NBR)===norm(p.plan);});if(p.vilCode!=null)exact=exact.filter(f=>Number(f.attributes?.VIL_CODE)===Number(p.vilCode));if(exact.length===1)return exact[0];if(exact.length>1)console.warn(`PARCEL_AMBIGUOUS ${p.code||p.title||p.parcel}: ${exact.length} exact matches`);return null;}\",'strict unique parcel matching');\nwriteFileSync('./server.js',c,'utf8');");
 
+// Property detail page must expose the same cadastral identity used by the live GIS runtime.
+s=s.replace("writeFileSync('./viewer.js',v,'utf8');","v=v.replace(\"${field('Αριθμός τεμαχίου',p.parcel)}\",\"${field('Φύλλο',p.sheet)}${field('Σχέδιο',p.plan)}${field('Μπλοκ',p.block)}${field('Αριθμός τεμαχίου',p.parcel)}${field('DLS VIL_CODE',p.vilCode)}\");\nwriteFileSync('./viewer.js',v,'utf8');");
+
 // Keep DLS URLs small by batching exact-property clauses.
 const from=`  const where=clauses.join(' OR ');
   const j=await query(PARCELS,{f:'json',where,outFields:'SBPI_ID_NO,DIST_CODE,VIL_CODE,BLCK_CODE,PARCEL_NBR,SHEET,PLAN_NBR,OBJECTID,SHAPE.STArea()',returnGeometry:true,outSR:CRS,returnZ:false,resultRecordCount:1000},2,10000);
