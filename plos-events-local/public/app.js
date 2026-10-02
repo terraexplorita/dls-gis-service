@@ -12,8 +12,8 @@ function googleTemplateUrl(e){const base='https://calendar.google.com/calendar/r
 function selectedIds(){return [...document.querySelectorAll('.select-event:checked')].map(x=>x.dataset.id)}
 function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v||'').trim())}
 function eventById(id){return events.find(e=>String(e.id)===String(id))}
-function inviteTargets(ids,requireChecked=false){const out={};for(const id of ids){const esc=CSS.escape(id);const c=document.querySelector(`.invite-checkbox[data-id="${esc}"]`);const input=document.querySelector(`.invite-email[data-id="${esc}"]`);if((!requireChecked||c?.checked)&&input?.value.trim())out[id]=input.value.trim()}return out}
-function invitationMap(ids,requireChecked=false){if(globalInviteAll.checked){const email=globalInviteEmail.value.trim();if(!validEmail(email))throw new Error('Συμπλήρωσε έγκυρο email στη Μαζική πρόσκληση.');const out={};for(const id of ids){const e=eventById(id);if(e&&e.inviteAllowed!==false)out[id]=email}return out}return inviteTargets(ids,requireChecked)}
+function inviteTargets(ids){const out={};for(const id of ids){const esc=CSS.escape(id);const input=document.querySelector(`.invite-email[data-id="${esc}"]`);const value=input?.value.trim();if(value)out[id]=value}return out}
+function invitationMap(ids){if(globalInviteAll.checked){const email=globalInviteEmail.value.trim();if(!validEmail(email))throw new Error('Συμπλήρωσε έγκυρο email στη Μαζική πρόσκληση.');const out={};for(const id of ids){const e=eventById(id);if(e&&e.inviteAllowed!==false)out[id]=email}return out}return inviteTargets(ids)}
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');return d}
 function isLimassol(e){const s=[e.city,e.location,e.district].filter(Boolean).join(' ').toLowerCase();return s.includes('limassol')||s.includes('λεμεσ')}
 
@@ -39,6 +39,8 @@ function render(){
     const st=statusMap[e.id];
     if(st?.inCalendar){node.querySelector('.calendar-badge').classList.remove('hidden');del.classList.remove('hidden');if(e.inviteAllowed!==false)invNow.classList.remove('hidden')}
     if(e.inviteAllowed===false){inv.disabled=true;email.disabled=true;inv.parentElement.title='Δεν επιτρέπεται πρόσκληση για αυτή την εκδήλωση'}
+    email.addEventListener('input',()=>{if(!email.disabled)inv.checked=Boolean(email.value.trim())});
+    inv.addEventListener('change',()=>{if(inv.checked&&!email.value.trim())email.focus()});
     del.onclick=()=>deleteIds([String(e.id)]);
     invNow.onclick=()=>inviteIds([String(e.id)]);
     card.dataset.id=e.id;
@@ -62,14 +64,11 @@ async function refresh(){
 async function addIds(ids){
   if(!ids.length)return;
   try{
-    const invites=invitationMap(ids,true);
-    if(!globalInviteAll.checked){
-      for(const id of ids){
-        const c=document.querySelector(`.invite-checkbox[data-id="${CSS.escape(id)}"]`);
-        if(c?.checked&&!invites[id]){statusText.textContent='Συμπλήρωσε email παραλήπτη για κάθε επιλεγμένη πρόσκληση.';return}
-      }
+    const invites=invitationMap(ids);
+    for(const [id,email] of Object.entries(invites)){
+      if(!validEmail(email)){statusText.textContent=`Μη έγκυρο email για την εκδήλωση #${events.findIndex(e=>String(e.id)===String(id))+1}.`;return}
     }
-    statusText.textContent='Καταχώριση…';
+    statusText.textContent=Object.keys(invites).length?'Καταχώριση και αποστολή πρόσκλησης…':'Καταχώριση…';
     await post('/api/add',{ids,invite:invites});
     await refresh();
   }catch(e){statusText.textContent=e.message}
@@ -80,13 +79,9 @@ async function deleteIds(ids){if(!ids.length)return;statusText.textContent='Δι
 async function inviteIds(ids){
   if(!ids.length)return;
   try{
-    const targets=invitationMap(ids,false);
-    if(!globalInviteAll.checked){
-      for(const id of ids){
-        const ev=eventById(id);
-        if(ev?.inviteAllowed!==false&&!targets[id]){statusText.textContent='Συμπλήρωσε email παραλήπτη πριν στείλεις πρόσκληση.';return}
-      }
-    }
+    const targets=invitationMap(ids);
+    for(const id of ids){const ev=eventById(id);if(ev?.inviteAllowed!==false&&!targets[id]){statusText.textContent='Συμπλήρωσε email παραλήπτη πριν στείλεις πρόσκληση.';return}}
+    for(const email of Object.values(targets)){if(!validEmail(email)){statusText.textContent='Συμπλήρωσε έγκυρο email παραλήπτη.';return}}
     statusText.textContent='Αποστολή πρόσκλησης…';
     await post('/api/invite',{ids,invite:targets});
     await refresh();
