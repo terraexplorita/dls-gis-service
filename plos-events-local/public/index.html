@@ -14,6 +14,12 @@
   </header>
   <section class="privacy-box"><strong>LOCAL ONLY</strong> — το interface ακούει μόνο στο <code>127.0.0.1</code> και δεν εκτίθεται στο Internet.</section>
   <section class="import-box"><label class="file-label">Εισαγωγή λίστας εκδηλώσεων <input id="eventFile" type="file" accept="application/json,.json" /></label><span id="importStatus" class="muted"></span></section>
+  <section class="global-invite-box">
+    <strong>Μαζική πρόσκληση</strong>
+    <input id="globalInviteEmail" type="email" placeholder="email παραλήπτη" autocomplete="email" />
+    <label><input type="checkbox" id="globalInviteAll" /> Χρησιμοποίησε το ίδιο email για όλες τις επιλεγμένες προσκλήσεις</label>
+    <span class="muted">Όταν είναι ενεργό, οι επιλεγμένες εκδηλώσεις που επιτρέπουν πρόσκληση θα χρησιμοποιούν αυτό το email. Μπορείς μετά να αλλάξεις email και να επιλέξεις άλλο σύνολο εκδηλώσεων.</span>
+  </section>
   <section class="toolbar"><label><input type="checkbox" id="selectAll" /> Επιλογή όλων</label><button id="addSelected">Καταχώριση επιλεγμένων</button><button id="inviteSelected" class="secondary">Αποστολή προσκλήσεων</button><button id="deleteSelected" class="danger">Delete selected from Calendar</button><span id="statusText"></span></section>
   <section id="events"></section>
 </main>
@@ -26,7 +32,7 @@
       <div class="links"><a class="source-link" target="_blank" rel="noopener">Original Source</a><a class="google-link" target="_blank" rel="noopener">➕ Google Calendar</a></div>
       <div class="invite-row">
         <label><input type="checkbox" class="invite-checkbox" /> Αποστολή πρόσκλησης με email</label>
-        <input type="email" class="invite-email" placeholder="email παραλήπτη" autocomplete="email" />
+        <input type="email" class="invite-email" placeholder="email παραλήπτη για αυτή την εκδήλωση" autocomplete="email" />
         <button class="invite-now secondary hidden">Αποστολή πρόσκλησης τώρα</button>
         <button class="delete-one danger hidden">Delete from Calendar</button>
       </div>
