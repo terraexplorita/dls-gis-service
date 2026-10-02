@@ -52,6 +52,13 @@ replaceOnce(
   'hires raster dpi'
 );
 
+// Use gentler wheel steps at high magnification and a practical maximum zoom.
+replaceOnce(
+  "const zoom=(factor,cx=wrap.clientWidth/2,cy=wrap.clientHeight/2)=>{const old=scale,ns=Math.max(.15,Math.min(60,scale*factor));x=cx-(cx-x)*(ns/old);y=cy-(cy-y)*(ns/old);scale=ns;apply();save();scheduleRasterRefresh();};",
+  "const zoom=(factor,cx=wrap.clientWidth/2,cy=wrap.clientHeight/2)=>{const old=scale,ns=Math.max(.15,Math.min(20,scale*factor));if(Math.abs(ns-old)<.0001)return;x=cx-(cx-x)*(ns/old);y=cy-(cy-y)*(ns/old);scale=ns;apply();save();scheduleRasterRefresh();};const wheelFactor=delta=>{const step=scale>=10?1.08:scale>=5?1.12:scale>=2.5?1.16:1.22;return delta<0?step:1/step;};",
+  'adaptive cursor zoom'
+);
+
 // Split relation list into touching / very close / close.
 replaceOnce(
   "const rel=confirmedRelations[group]||{touching:[],close:[]};",
@@ -81,6 +88,13 @@ replaceOnce(
   'sidebar top button styles'
 );
 
+// Make hover highlight visually identical even for partial-ownership rows.
+replaceOnce(
+  ".vrow.owned.partial-owned{border-left:7px solid #77be87;background:#f5fff6}",
+  ".vrow.owned.partial-owned{border-left:7px solid #77be87;background:#f5fff6}.vrow.owned.partial-owned.is-hover,.vrow.owned.partial-owned:hover{background:#fff3a9;border-color:#c9a900;box-shadow:0 0 0 2px #f1d94a77}",
+  'uniform list highlight'
+);
+
 // Add a viewer-level loading overlay that remains visible until the inner SVG reports map readiness.
 replaceOnce(
   ".hint{position:absolute;left:14px;bottom:14px;background:#fffffff0;padding:8px 11px;border-radius:6px;font-size:13px;z-index:4}",
@@ -103,15 +117,34 @@ replaceOnce(
 // Use a topmost SVG clone for property highlighting so it remains visible after zoom/raster refresh.
 replaceOnce(
   "const setMapHighlight=(key,on)=>{const p=parcelPath(key);if(!p)return;if(on){if(!p.dataset.hlStroke){p.dataset.hlStroke=p.getAttribute('stroke')||'';p.dataset.hlWidth=p.getAttribute('stroke-width')||'';p.dataset.hlOpacity=p.getAttribute('fill-opacity')||'';}p.setAttribute('stroke','#ffd400');p.setAttribute('stroke-width','7');p.setAttribute('fill-opacity','.96');p.style.filter='drop-shadow(0 0 6px #ffcc00)';}else{if(p.dataset.hlStroke)p.setAttribute('stroke',p.dataset.hlStroke);if(p.dataset.hlWidth)p.setAttribute('stroke-width',p.dataset.hlWidth);if(p.dataset.hlOpacity)p.setAttribute('fill-opacity',p.dataset.hlOpacity);p.style.filter='';}};",
-  "const setMapHighlight=(key,on)=>{if(!svgDoc)return;const id='active-highlight-'+key;const old=svgDoc.getElementById(id);if(!on){if(old)old.remove();return;}if(old)return;const p=parcelPath(key);if(!p)return;const clone=p.cloneNode(true);clone.setAttribute('id',id);clone.removeAttribute('data-property-key');clone.setAttribute('pointer-events','none');clone.setAttribute('fill','#ffd400');clone.setAttribute('fill-opacity','.28');clone.setAttribute('stroke','#ffbf00');clone.setAttribute('stroke-width','10');clone.setAttribute('stroke-opacity','1');clone.setAttribute('vector-effect','non-scaling-stroke');clone.style.filter='drop-shadow(0 0 7px #ffcc00)';svgDoc.documentElement.appendChild(clone);};",
+  "const setMapHighlight=(key,on)=>{if(!svgDoc)return;const id='active-highlight-'+key;const old=svgDoc.getElementById(id);if(!on){if(old)old.remove();return;}if(old)return;const p=parcelPath(key);if(!p)return;const clone=p.cloneNode(true);clone.setAttribute('id',id);clone.removeAttribute('data-property-key');clone.setAttribute('pointer-events','none');clone.setAttribute('fill','#ffd400');clone.setAttribute('fill-opacity','.32');clone.setAttribute('stroke','#ffbf00');clone.setAttribute('stroke-width','9');clone.setAttribute('stroke-opacity','1');clone.setAttribute('vector-effect','non-scaling-stroke');clone.style.filter='drop-shadow(0 0 7px #ffcc00)';svgDoc.documentElement.appendChild(clone);};",
   'topmost map highlight clone'
 );
 
-// Hide duplicate vector parcel-number labels: DLS raster already carries the readable parcel labels.
+// If a list-hovered parcel is outside the current zoomed viewport, center it without changing zoom.
+replaceOnce(
+  "const revealRow=key=>{const row=rowFor(key);if(!row)return;if(row.style.display==='none'){row.dataset.hoverForced='1';row.style.display='';}requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),rr=row.getBoundingClientRect();if(rr.top<sr.top+30||rr.bottom>sr.bottom-30){const target=side.scrollTop+(rr.top-sr.top)-(side.clientHeight/2)+(rr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});};",
+  "const focusProperty=key=>{const p=parcelPath(key);if(!p)return;const b=p.getBBox(),cx=x+(b.x+b.width/2)*scale,cy=y+(b.y+b.height/2)*scale,mx=wrap.clientWidth*.15,my=wrap.clientHeight*.15;if(cx<mx||cx>wrap.clientWidth-mx||cy<my||cy>wrap.clientHeight-my){x=wrap.clientWidth/2-(b.x+b.width/2)*scale;y=wrap.clientHeight/2-(b.y+b.height/2)*scale;apply();save();scheduleRasterRefresh(120);}};const revealRow=key=>{const row=rowFor(key);if(!row)return;if(row.style.display==='none'){row.dataset.hoverForced='1';row.style.display='';}requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),rr=row.getBoundingClientRect();if(rr.top<sr.top+30||rr.bottom>sr.bottom-30){const target=side.scrollTop+(rr.top-sr.top)-(side.clientHeight/2)+(rr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});};",
+  'focus offscreen property'
+);
+
+// Hide duplicate vector parcel-number labels and the inner SVG loader; the viewer-level loader is the only loader shown.
 replaceOnce(
   "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;markMissing(svg);",
-  "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;const clarityStyle=doc.createElementNS('http://www.w3.org/2000/svg','style');clarityStyle.textContent='.parcel-number{display:none!important}';svg.appendChild(clarityStyle);markMissing(svg);",
-  'hide duplicate parcel labels'
+  "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;const clarityStyle=doc.createElementNS('http://www.w3.org/2000/svg','style');clarityStyle.textContent='.parcel-number{display:none!important}#map-loading{display:none!important}';svg.appendChild(clarityStyle);markMissing(svg);",
+  'hide duplicate labels and inner loader'
+);
+
+// Correct embedded-document wheel coordinates: anchor zoom to the actual cursor position in the outer viewport.
+replaceOnce(
+  "doc.addEventListener('wheel',e=>{e.preventDefault();const r=wrap.getBoundingClientRect();zoom(e.deltaY<0?1.28:.78,e.clientX-r.left,e.clientY-r.top);},{passive:false});",
+  "doc.addEventListener('wheel',e=>{e.preventDefault();zoom(wheelFactor(e.deltaY),x+e.clientX,y+e.clientY);},{passive:false});",
+  'embedded wheel cursor anchor'
+);
+replaceOnce(
+  "wrap.addEventListener('wheel',e=>{if(e.target===wrap){e.preventDefault();const r=wrap.getBoundingClientRect();zoom(e.deltaY<0?1.28:.78,e.clientX-r.left,e.clientY-r.top);}},{passive:false});",
+  "wrap.addEventListener('wheel',e=>{if(e.target===wrap){e.preventDefault();const r=wrap.getBoundingClientRect();zoom(wheelFactor(e.deltaY),e.clientX-r.left,e.clientY-r.top);}},{passive:false});",
+  'outer wheel adaptive zoom'
 );
 
 // Poll the inner SVG readiness flags and hide the outer loading overlay only when map layers are ready.
@@ -121,11 +154,21 @@ replaceOnce(
   'viewer loading readiness'
 );
 
-// Wire both return-to-top buttons.
+// Wire return-to-top buttons and make list hover center the parcel when necessary before highlighting it.
 replaceOnce(
   "document.querySelectorAll('a[data-detail]').forEach(a=>a.addEventListener('click',save));",
   "document.querySelectorAll('a[data-detail]').forEach(a=>a.addEventListener('click',save));document.querySelectorAll('[data-to-top]').forEach(b=>b.addEventListener('click',()=>side.scrollTo({top:0,behavior:'smooth'})));",
   'top button behavior'
+);
+replaceOnce(
+  "document.querySelectorAll('.vrow[data-property-key]').forEach(row=>{const key=row.dataset.propertyKey;row.addEventListener('mouseenter',()=>setMapHighlight(key,true));row.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",
+  "document.querySelectorAll('.vrow[data-property-key]').forEach(row=>{const key=row.dataset.propertyKey;row.addEventListener('mouseenter',()=>{focusProperty(key);setMapHighlight(key,true);});row.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",
+  'property row focus and highlight'
+);
+replaceOnce(
+  "document.querySelectorAll('[data-hover-property]').forEach(el=>{const key=el.dataset.hoverProperty;el.addEventListener('mouseenter',()=>setMapHighlight(key,true));el.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",
+  "document.querySelectorAll('[data-hover-property]').forEach(el=>{const key=el.dataset.hoverProperty;el.addEventListener('mouseenter',()=>{focusProperty(key);setMapHighlight(key,true);});el.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",
+  'relation link focus and highlight'
 );
 
 // Greek UI labels requested during acceptance testing.
@@ -133,6 +176,6 @@ s=s.replaceAll('>Details</a>','>ΠΛΗΡΟΦΟΡΙΕΣ</a>')
    .replaceAll('>Source ↗</a>','>ΠΗΓΗ ↗</a>')
    .replaceAll('χωρίς source','χωρίς πηγή');
 
-s=s.replaceAll('v=3.7','v=3.11').replaceAll('viewer v3.7','viewer v3.11');
+s=s.replaceAll('v=3.7','v=3.12').replaceAll('viewer v3.7','viewer v3.12');
 writeFileSync(runtimePath,s,'utf8');
 await import('./viewer.runtime.js');
