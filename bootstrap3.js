@@ -28,3 +28,4 @@ s=s.replace(from,to);
 writeFileSync('./bootstrap2.runtime.js',s,'utf8');
 await import('./bootstrap2.runtime.js?chunked='+Date.now());
 import('./audit-runtime.js?audit='+Date.now()).catch(e=>console.error('GIS_AUDIT_IMPORT_FAIL '+(e?.stack||e)));
+import('./smoke-runtime.js?smoke='+Date.now()).catch(e=>console.error('RUNTIME_SMOKE_IMPORT_FAIL '+(e?.stack||e)));
