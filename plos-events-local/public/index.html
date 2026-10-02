@@ -9,63 +9,30 @@
 <body>
 <main class="wrap">
   <header class="topbar">
-    <div>
-      <h1>PERSONAL LIFE OS — Εκδηλώσεις</h1>
-      <p>Τοπική εφαρμογή. Τρέχει μόνο στον υπολογιστή σου.</p>
-    </div>
-    <div class="top-actions">
-      <a id="connectBtn" class="button secondary hidden" href="/oauth/start">Σύνδεση Google Calendar</a>
-      <button id="refreshBtn" class="secondary">Ανανέωση</button>
-    </div>
+    <div><h1>PERSONAL LIFE OS — Εκδηλώσεις</h1><p>Τοπική εφαρμογή. Τρέχει μόνο στον υπολογιστή σου.</p></div>
+    <div class="top-actions"><a id="connectBtn" class="button secondary hidden" href="/oauth/start">Σύνδεση Google Calendar</a><button id="refreshBtn" class="secondary">Ανανέωση</button></div>
   </header>
-
-  <section class="privacy-box">
-    <strong>LOCAL ONLY</strong> — το interface ακούει μόνο στο <code>127.0.0.1</code> και δεν εκτίθεται στο Internet.
-  </section>
-
-  <section class="import-box">
-    <label class="file-label">Εισαγωγή λίστας εκδηλώσεων
-      <input id="eventFile" type="file" accept="application/json,.json" />
-    </label>
-    <span id="importStatus" class="muted"></span>
-  </section>
-
-  <section class="toolbar">
-    <label><input type="checkbox" id="selectAll" /> Επιλογή όλων</label>
-    <button id="addSelected">Καταχώριση επιλεγμένων</button>
-    <button id="inviteSelected" class="secondary">Αποστολή προσκλήσεων</button>
-    <button id="deleteSelected" class="danger">Delete selected from Calendar</button>
-    <span id="statusText"></span>
-  </section>
-
+  <section class="privacy-box"><strong>LOCAL ONLY</strong> — το interface ακούει μόνο στο <code>127.0.0.1</code> και δεν εκτίθεται στο Internet.</section>
+  <section class="import-box"><label class="file-label">Εισαγωγή λίστας εκδηλώσεων <input id="eventFile" type="file" accept="application/json,.json" /></label><span id="importStatus" class="muted"></span></section>
+  <section class="toolbar"><label><input type="checkbox" id="selectAll" /> Επιλογή όλων</label><button id="addSelected">Καταχώριση επιλεγμένων</button><button id="inviteSelected" class="secondary">Αποστολή προσκλήσεων</button><button id="deleteSelected" class="danger">Delete selected from Calendar</button><span id="statusText"></span></section>
   <section id="events"></section>
 </main>
-
 <template id="eventTemplate">
   <article class="event-card">
     <div class="event-select"><input type="checkbox" class="select-event" /></div>
     <div class="event-content">
-      <div class="event-title-row">
-        <span class="event-number"></span>
-        <h2 class="event-title"></h2>
-        <span class="limassol-badge hidden">ΛΕΜΕΣΟΣ</span>
-        <span class="calendar-badge hidden">ΗΔΗ ΣΤΟ ΗΜΕΡΟΛΟΓΙΟ</span>
-      </div>
-      <div class="meta"></div>
-      <p class="description"></p>
-      <div class="links">
-        <a class="source-link" target="_blank" rel="noopener">Original Source</a>
-        <a class="google-link" target="_blank" rel="noopener">➕ Google Calendar</a>
-      </div>
+      <div class="event-title-row"><span class="event-number"></span><h2 class="event-title"></h2><span class="limassol-badge hidden">ΛΕΜΕΣΟΣ</span><span class="calendar-badge hidden">ΗΔΗ ΣΤΟ ΗΜΕΡΟΛΟΓΙΟ</span></div>
+      <div class="meta"></div><p class="description"></p>
+      <div class="links"><a class="source-link" target="_blank" rel="noopener">Original Source</a><a class="google-link" target="_blank" rel="noopener">➕ Google Calendar</a></div>
       <div class="invite-row">
         <label><input type="checkbox" class="invite-checkbox" /> Αποστολή πρόσκλησης με email</label>
+        <input type="email" class="invite-email" placeholder="email παραλήπτη" autocomplete="email" />
         <button class="invite-now secondary hidden">Αποστολή πρόσκλησης τώρα</button>
         <button class="delete-one danger hidden">Delete from Calendar</button>
       </div>
     </div>
   </article>
 </template>
-
 <script src="/app.js"></script>
 </body>
 </html>
