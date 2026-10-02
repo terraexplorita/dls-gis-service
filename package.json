@@ -1,15 +1,15 @@
 {
   "name": "dls-gis-service",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node bootstrap3.js",
-    "verify": "node selftest.js",
+    "verify": "node preflight.js",
     "test": "node test.js"
   },
   "dependencies": {
-    "sharp": "^0.34.4"
+    "sharp": "0.35.5"
   },
   "engines": {
     "node": ">=20"
