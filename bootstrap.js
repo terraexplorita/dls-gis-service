@@ -16,17 +16,25 @@ replaceOnce(
   'hires raster layer order'
 );
 
-// Pointer coordinates are already screen pixels. Multiplying by zoom caused over-correction/jitter.
+// Render the embedded SVG at its actual zoomed CSS size instead of scaling the whole
+// <object> as one composited bitmap. This keeps vector cadastral lines crisp at zoom.
+replaceOnce(
+  "const apply=()=>{clamp();obj.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')';};",
+  "const apply=()=>{clamp();obj.style.transform='none';obj.style.left=x+'px';obj.style.top=y+'px';obj.style.width=(mapW*scale)+'px';obj.style.height=(mapH*scale)+'px';};",
+  'actual-size SVG rendering'
+);
+
+// With actual-size rendering, embedded-document pointer coordinates are screen/CSS pixels.
 replaceOnce(
   "lastX=e.clientX*scale;lastY=e.clientY*scale;",
   "lastX=e.clientX;lastY=e.clientY;",
   'pointerdown coordinates'
 );
 
-// During drag, move 1:1 with the pointer and avoid clamping every pointer event.
+// During drag, move exactly with the pointer and avoid clamping every pointer event.
 replaceOnce(
   "const sx=e.clientX*scale,sy=e.clientY*scale,dx=sx-lastX,dy=sy-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=sx;lastY=sy;apply();e.preventDefault();",
-  "const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=e.clientX;lastY=e.clientY;obj.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')';e.preventDefault();",
+  "const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=e.clientX;lastY=e.clientY;obj.style.left=x+'px';obj.style.top=y+'px';e.preventDefault();",
   'pointermove pan'
 );
 
@@ -37,6 +45,23 @@ replaceOnce(
   'pointerup clamp'
 );
 
-s=s.replaceAll('v=3.7','v=3.8').replaceAll('viewer v3.7','viewer v3.8');
+// Give the visible-viewport DLS refresh more pixel headroom on high-density displays.
+replaceOnce(
+  "const dpr=Math.min(2,window.devicePixelRatio||1),outW=Math.max(512,Math.min(3072,Math.round(wrap.clientWidth*dpr))),outH=Math.max(512,Math.min(3072,Math.round(wrap.clientHeight*dpr)));",
+  "const dpr=Math.min(3,window.devicePixelRatio||1),outW=Math.max(768,Math.min(4096,Math.round(wrap.clientWidth*dpr))),outH=Math.max(768,Math.min(4096,Math.round(wrap.clientHeight*dpr)));",
+  'hires raster output size'
+);
+replaceOnce(
+  "u.searchParams.set('dpi',scale>=8?'192':'144');",
+  "u.searchParams.set('dpi',scale>=8?'288':'192');",
+  'hires raster dpi'
+);
+
+// Greek UI labels requested during acceptance testing.
+s=s.replaceAll('>Details</a>','>ΠΛΗΡΟΦΟΡΙΕΣ</a>')
+   .replaceAll('>Source ↗</a>','>ΠΗΓΗ ↗</a>')
+   .replaceAll('χωρίς source','χωρίς πηγή');
+
+s=s.replaceAll('v=3.7','v=3.9').replaceAll('viewer v3.7','viewer v3.9');
 writeFileSync(runtimePath,s,'utf8');
 await import('./viewer.runtime.js');
