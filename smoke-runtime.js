@@ -16,6 +16,6 @@ try{
   const catalog=await req('/properties');
   for(const id of ['catalogKindFilter','catalogDistrictFilter','catalogMunicipalityFilter','catalogParishFilter','catalogZoneFilter','catalogDateFilter','catalogFiltersClear'])assert(catalog.t.includes(id),`catalog combined filter missing: ${id}`);
   assert(catalog.t.includes('Ημ/νία καταχώρησης')&&catalog.t.includes('01/10/2026'),'catalog intake date missing');
-  assert(catalog.t.includes('applyCatalogFilters')&&catalog.t.includes("filters.district?.value")&&catalog.t.includes("filters.zone?.value"),'combined AND filter logic missing');
-  console.log('RUNTIME_SMOKE_PASS '+JSON.stringify({groups:4,panthea:true,pentakomoRelation:true,sharedParcels:true,candidateDateUI:true,combinedFilters:true}));
+  assert(catalog.t.includes('rowMatches')&&catalog.t.includes('allowedFor')&&catalog.t.includes('rebuildSelect')&&catalog.t.includes('refreshFacets'),'dynamic faceted filter logic missing');
+  console.log('RUNTIME_SMOKE_PASS '+JSON.stringify({groups:4,panthea:true,pentakomoRelation:true,sharedParcels:true,candidateDateUI:true,combinedFilters:true,dynamicFacets:true}));
 }catch(e){console.error('RUNTIME_SMOKE_FAIL '+(e?.stack||e));}
