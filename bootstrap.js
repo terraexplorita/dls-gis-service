@@ -9,173 +9,34 @@ function replaceOnce(from,to,label){
   s=s.replace(from,to);
 }
 
-// High-resolution DLS raster must stay underneath the cadastral vector overlay.
-replaceOnce(
-  "const owned=svgDoc.getElementById('owned-overlay');if(owned)owned.parentNode.insertBefore(hi,owned);else svgDoc.documentElement.appendChild(hi);",
-  "const cad=svgDoc.getElementById('cadastre-overlay'),owned=svgDoc.getElementById('owned-overlay'),anchor=cad||owned;if(anchor)anchor.parentNode.insertBefore(hi,anchor);else svgDoc.documentElement.appendChild(hi);",
-  'hires raster layer order'
-);
+replaceOnce("const owned=svgDoc.getElementById('owned-overlay');if(owned)owned.parentNode.insertBefore(hi,owned);else svgDoc.documentElement.appendChild(hi);","const cad=svgDoc.getElementById('cadastre-overlay'),owned=svgDoc.getElementById('owned-overlay'),anchor=cad||owned;if(anchor)anchor.parentNode.insertBefore(hi,anchor);else svgDoc.documentElement.appendChild(hi);",'hires raster layer order');
+replaceOnce("const apply=()=>{clamp();obj.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')';};","const apply=()=>{clamp();obj.style.transform='none';obj.style.left=x+'px';obj.style.top=y+'px';obj.style.width=(mapW*scale)+'px';obj.style.height=(mapH*scale)+'px';};",'actual-size SVG rendering');
+replaceOnce("lastX=e.clientX*scale;lastY=e.clientY*scale;","lastX=e.screenX;lastY=e.screenY;",'pointerdown screen coordinates');
+replaceOnce("const sx=e.clientX*scale,sy=e.clientY*scale,dx=sx-lastX,dy=sy-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=sx;lastY=sy;apply();e.preventDefault();","const dx=e.screenX-lastX,dy=e.screenY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=e.screenX;lastY=e.screenY;obj.style.left=x+'px';obj.style.top=y+'px';e.preventDefault();",'pointermove 1:1 pan');
+replaceOnce("drag=false;wrap.classList.remove('dragging');save();scheduleRasterRefresh(120);","drag=false;wrap.classList.remove('dragging');apply();save();scheduleRasterRefresh(120);",'pointerup clamp');
+replaceOnce("const dpr=Math.min(2,window.devicePixelRatio||1),outW=Math.max(512,Math.min(3072,Math.round(wrap.clientWidth*dpr))),outH=Math.max(512,Math.min(3072,Math.round(wrap.clientHeight*dpr)));","const quality=Math.min(4,Math.max(2.5,(window.devicePixelRatio||1)*2)),outW=Math.max(1280,Math.min(4096,Math.round(wrap.clientWidth*quality))),outH=Math.max(1280,Math.min(4096,Math.round(wrap.clientHeight*quality)));",'hires raster output density');
+replaceOnce("u.searchParams.set('dpi',scale>=8?'192':'144');","u.searchParams.set('dpi',scale>=8?'288':'192');",'hires raster dpi');
+replaceOnce("const zoom=(factor,cx=wrap.clientWidth/2,cy=wrap.clientHeight/2)=>{const old=scale,ns=Math.max(.15,Math.min(60,scale*factor));x=cx-(cx-x)*(ns/old);y=cy-(cy-y)*(ns/old);scale=ns;apply();save();scheduleRasterRefresh();};","const zoom=(factor,cx=wrap.clientWidth/2,cy=wrap.clientHeight/2)=>{const old=scale,ns=Math.max(.15,Math.min(20,scale*factor));if(Math.abs(ns-old)<.0001)return;x=cx-(cx-x)*(ns/old);y=cy-(cy-y)*(ns/old);scale=ns;apply();save();scheduleRasterRefresh();};const wheelFactor=delta=>{const step=scale>=10?1.08:scale>=5?1.12:scale>=2.5?1.16:1.22;return delta<0?step:1/step;};",'adaptive cursor zoom');
+replaceOnce("const rel=confirmedRelations[group]||{touching:[],close:[]};","const rel=confirmedRelations[group]||{touching:[],close:[]};const veryClose=rel.close.filter(x=>Number(x[2])<=50),near=rel.close.filter(x=>Number(x[2])>50);",'relation buckets');
+replaceOnce("const pair=([a,b,d],touching=false)=>{const label=touching?'ΕΦΑΠΤΕΤΑΙ':d<=50?'ΠΑΡΑ ΠΟΛΥ ΚΟΝΤΑ':'ΠΟΛΥ ΚΟΝΤΑ';const distance=touching?'0 m':`${num(d)} m`;return `<div class=\"relcard\" data-hover-pair=\"${a},${b}\"><div class=\"relpair\">${propLink(a)}<span class=\"arrow\">↔</span>${propLink(b)}</div><div class=\"reldist\">${distance} — ${label}</div></div>`;};","const pair=([a,b,d],touching=false)=>{const label=touching?'ΕΦΑΠΤΕΤΑΙ':Number(d)<=50?'ΠΟΛΥ ΚΟΝΤΑ':'ΚΟΝΤΑ';const distance=touching?'0 m':`${num(d)} m`;return `<div class=\"relcard\" data-hover-pair=\"${a},${b}\"><div class=\"relpair\">${propLink(a)}<span class=\"arrow\">↔</span>${propLink(b)}</div><div class=\"reldist\">${distance} — ${label}</div></div>`;};",'relation labels');
+replaceOnce("const close=rel.close.length?rel.close.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';\n  return `<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΦΑΠΤΟΝΤΑΙ</h2>${touch}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΠΟΛΥ ΚΟΝΤΑ</h2>${close}`;","const very=veryClose.length?veryClose.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';const close=near.length?near.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';\n  return `<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΦΑΠΤΟΝΤΑΙ</h2>${touch}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΠΟΛΥ ΚΟΝΤΑ</h2>${very}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΚΟΝΤΑ</h2>${close}`;",'relation sections');
+replaceOnce("return `<div class=\"vsideHead\"><a class=\"allprops\" href=\"/properties\">ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ</a></div>${relationBlock(group)}<h2 class=\"sectionTitle\">ΙΔΙΟΚΤΗΤΑ ΑΚΙΝΗΤΑ</h2>${filters}<div id=\"ownedList\">${owned}</div><h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΡΟΣ ΑΓΟΡΑ</h2><div id=\"candidateList\">${candidates}</div>`;","return `<div class=\"vsideHead\"><a class=\"allprops\" href=\"/properties\">ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ</a><button class=\"toTop\" type=\"button\" data-to-top>↑ ΚΟΡΥΦΗ</button></div>${relationBlock(group)}<h2 class=\"sectionTitle\">ΙΔΙΟΚΤΗΤΑ ΑΚΙΝΗΤΑ</h2>${filters}<div id=\"ownedList\">${owned}</div><h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΡΟΣ ΑΓΟΡΑ</h2><div id=\"candidateList\">${candidates}</div><div class=\"bottomTop\"><button class=\"toTop\" type=\"button\" data-to-top>↑ ΚΟΡΥΦΗ</button></div>`;",'sidebar top buttons');
+replaceOnce(".vsideHead{display:flex;justify-content:flex-end;position:sticky;top:-16px;background:#fff;padding:4px 0 12px;z-index:4}.allprops{background:#111;color:#fff!important;padding:10px 13px;border-radius:6px;text-decoration:none;font-weight:700}",".vsideHead{display:flex;justify-content:flex-end;gap:8px;position:sticky;top:-16px;background:#fff;padding:4px 0 12px;z-index:4}.allprops{background:#111;color:#fff!important;padding:10px 13px;border-radius:6px;text-decoration:none;font-weight:700}.toTop{border:1px solid #777;background:#fff;color:#111;padding:9px 11px;border-radius:6px;font-weight:800;cursor:pointer}.bottomTop{display:flex;justify-content:flex-end;padding:8px 0 2px}",'sidebar top button styles');
+replaceOnce(".vrow.owned.partial-owned{border-left:7px solid #77be87;background:#f5fff6}",".vrow.owned.partial-owned{border-left:7px solid #77be87;background:#f5fff6}.vrow.owned.partial-owned.is-hover,.vrow.owned.partial-owned:hover{background:#fff3a9;border-color:#c9a900;box-shadow:0 0 0 2px #f1d94a77}",'uniform list highlight');
+replaceOnce(".hint{position:absolute;left:14px;bottom:14px;background:#fffffff0;padding:8px 11px;border-radius:6px;font-size:13px;z-index:4}",".hint{position:absolute;left:14px;bottom:14px;background:#fffffff0;padding:8px 11px;border-radius:6px;font-size:13px;z-index:4}@keyframes viewerBlink{0%,100%{opacity:1}50%{opacity:.3}}.viewerLoading{position:absolute;z-index:20;left:50%;top:20px;transform:translateX(-50%);background:#111;color:#fff;padding:11px 18px;border-radius:8px;font-weight:900;box-shadow:0 2px 8px #0005;animation:viewerBlink 1s infinite;pointer-events:none}",'viewer loading style');
+replaceOnce("<object id=\"mapobj\" class=\"mapobj\" data=\"/map.svg?group=${encodeURIComponent(group)}&mpp=${mpp}&v=3.7\" type=\"image/svg+xml\"></object><div class=\"mapLegend\">","<object id=\"mapobj\" class=\"mapobj\" data=\"/map.svg?group=${encodeURIComponent(group)}&mpp=${mpp}&v=3.7\" type=\"image/svg+xml\"></object><div class=\"viewerLoading\" id=\"viewerLoading\">ΦΟΡΤΩΣΗ ΧΑΡΤΗ…</div><div class=\"mapLegend\">",'viewer loading markup');
+replaceOnce("const setListHighlight=(key,on,reveal=false)=>{const row=rowFor(key);if(row)row.classList.toggle('is-hover',on);relationLinksFor(key).forEach(a=>a.classList.toggle('is-hover',on));relationCardsFor(key).forEach(c=>c.classList.toggle('is-hover',on));if(on&&reveal)revealRow(key);};","const revealRelation=key=>{const cards=relationCardsFor(key);if(!cards.length)return false;const card=cards[0];requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),cr=card.getBoundingClientRect();if(cr.top<sr.top+30||cr.bottom>sr.bottom-30){const target=side.scrollTop+(cr.top-sr.top)-(side.clientHeight/2)+(cr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});return true;};const setListHighlight=(key,on,reveal=false)=>{const row=rowFor(key);if(row)row.classList.toggle('is-hover',on);relationLinksFor(key).forEach(a=>a.classList.toggle('is-hover',on));relationCardsFor(key).forEach(c=>c.classList.toggle('is-hover',on));if(on&&reveal&&!revealRelation(key))revealRow(key);};",'relation-first reveal');
+replaceOnce("const setMapHighlight=(key,on)=>{const p=parcelPath(key);if(!p)return;if(on){if(!p.dataset.hlStroke){p.dataset.hlStroke=p.getAttribute('stroke')||'';p.dataset.hlWidth=p.getAttribute('stroke-width')||'';p.dataset.hlOpacity=p.getAttribute('fill-opacity')||'';}p.setAttribute('stroke','#ffd400');p.setAttribute('stroke-width','7');p.setAttribute('fill-opacity','.96');p.style.filter='drop-shadow(0 0 6px #ffcc00)';}else{if(p.dataset.hlStroke)p.setAttribute('stroke',p.dataset.hlStroke);if(p.dataset.hlWidth)p.setAttribute('stroke-width',p.dataset.hlWidth);if(p.dataset.hlOpacity)p.setAttribute('fill-opacity',p.dataset.hlOpacity);p.style.filter='';}};","const setMapHighlight=(key,on)=>{if(!svgDoc)return;const id='active-highlight-'+key;const old=svgDoc.getElementById(id);if(!on){if(old)old.remove();return;}if(old)return;const p=parcelPath(key);if(!p)return;const clone=p.cloneNode(true);clone.setAttribute('id',id);clone.removeAttribute('data-property-key');clone.setAttribute('pointer-events','none');clone.setAttribute('fill','#ffd400');clone.setAttribute('fill-opacity','.32');clone.setAttribute('stroke','#ffbf00');clone.setAttribute('stroke-width','9');clone.setAttribute('stroke-opacity','1');clone.setAttribute('vector-effect','non-scaling-stroke');clone.style.filter='drop-shadow(0 0 7px #ffcc00)';svgDoc.documentElement.appendChild(clone);};",'topmost map highlight clone');
+replaceOnce("const revealRow=key=>{const row=rowFor(key);if(!row)return;if(row.style.display==='none'){row.dataset.hoverForced='1';row.style.display='';}requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),rr=row.getBoundingClientRect();if(rr.top<sr.top+30||rr.bottom>sr.bottom-30){const target=side.scrollTop+(rr.top-sr.top)-(side.clientHeight/2)+(rr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});};","const focusProperty=key=>{const p=parcelPath(key);if(!p)return;const b=p.getBBox(),left=x+b.x*scale,top=y+b.y*scale,right=left+b.width*scale,bottom=top+b.height*scale;const visible=right>0&&left<wrap.clientWidth&&bottom>0&&top<wrap.clientHeight;if(!visible){fit();save();scheduleRasterRefresh(120);}};const revealRow=key=>{const row=rowFor(key);if(!row)return;if(row.style.display==='none'){row.dataset.hoverForced='1';row.style.display='';}requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),rr=row.getBoundingClientRect();if(rr.top<sr.top+30||rr.bottom>sr.bottom-30){const target=side.scrollTop+(rr.top-sr.top)-(side.clientHeight/2)+(rr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});};",'fit-all for offscreen property');
+replaceOnce("obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;markMissing(svg);","obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;const innerLoader=doc.getElementById('map-loading');if(innerLoader)innerLoader.remove();const clarityStyle=doc.createElementNS('http://www.w3.org/2000/svg','style');clarityStyle.textContent='.parcel-number{display:none!important}';svg.appendChild(clarityStyle);markMissing(svg);",'remove inner loader and duplicate labels');
+replaceOnce("doc.addEventListener('wheel',e=>{e.preventDefault();const r=wrap.getBoundingClientRect();zoom(e.deltaY<0?1.28:.78,e.clientX-r.left,e.clientY-r.top);},{passive:false});","doc.addEventListener('wheel',e=>{e.preventDefault();zoom(wheelFactor(e.deltaY),x+e.clientX,y+e.clientY);},{passive:false});",'embedded wheel cursor anchor');
+replaceOnce("wrap.addEventListener('wheel',e=>{if(e.target===wrap){e.preventDefault();const r=wrap.getBoundingClientRect();zoom(e.deltaY<0?1.28:.78,e.clientX-r.left,e.clientY-r.top);}},{passive:false});","wrap.addEventListener('wheel',e=>{if(e.target===wrap){e.preventDefault();const r=wrap.getBoundingClientRect();zoom(wheelFactor(e.deltaY),e.clientX-r.left,e.clientY-r.top);}},{passive:false});",'outer wheel adaptive zoom');
+replaceOnce("loaded=true;if(!restore())fit();sessionStorage.setItem('lastMapGroup',GROUP);scheduleRasterRefresh(120);","loaded=true;if(!restore())fit();sessionStorage.setItem('lastMapGroup',GROUP);scheduleRasterRefresh(120);const loadingEl=document.getElementById('viewerLoading');let readyChecks=0;const readyTimer=setInterval(()=>{readyChecks++;const root=svgDoc?.documentElement,base=root?.getAttribute('data-basemap-loaded'),cad=root?.getAttribute('data-cadastral-loaded');if((base==='1'&&(cad==='1'||cad==='error'))||readyChecks>200){clearInterval(readyTimer);if(loadingEl)loadingEl.style.display='none';}},100);",'viewer loading readiness');
+replaceOnce("document.querySelectorAll('a[data-detail]').forEach(a=>a.addEventListener('click',save));","document.querySelectorAll('a[data-detail]').forEach(a=>a.addEventListener('click',save));document.querySelectorAll('[data-to-top]').forEach(b=>b.addEventListener('click',()=>side.scrollTo({top:0,behavior:'smooth'})));",'top button behavior');
+replaceOnce("document.querySelectorAll('.vrow[data-property-key]').forEach(row=>{const key=row.dataset.propertyKey;row.addEventListener('mouseenter',()=>setMapHighlight(key,true));row.addEventListener('mouseleave',()=>setMapHighlight(key,false));});","document.querySelectorAll('.vrow[data-property-key]').forEach(row=>{const key=row.dataset.propertyKey;row.addEventListener('mouseenter',()=>{focusProperty(key);setMapHighlight(key,true);});row.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",'property row focus and highlight');
+replaceOnce("document.querySelectorAll('[data-hover-property]').forEach(el=>{const key=el.dataset.hoverProperty;el.addEventListener('mouseenter',()=>setMapHighlight(key,true));el.addEventListener('mouseleave',()=>setMapHighlight(key,false));});","document.querySelectorAll('[data-hover-property]').forEach(el=>{const key=el.dataset.hoverProperty;el.addEventListener('mouseenter',()=>{focusProperty(key);setMapHighlight(key,true);});el.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",'relation link focus and highlight');
 
-// Render the embedded SVG at its actual zoomed CSS size instead of scaling the whole object bitmap.
-replaceOnce(
-  "const apply=()=>{clamp();obj.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')';};",
-  "const apply=()=>{clamp();obj.style.transform='none';obj.style.left=x+'px';obj.style.top=y+'px';obj.style.width=(mapW*scale)+'px';obj.style.height=(mapH*scale)+'px';};",
-  'actual-size SVG rendering'
-);
-
-// screenX/screenY are independent of the embedded SVG coordinate system and remain 1:1 at any zoom.
-replaceOnce(
-  "lastX=e.clientX*scale;lastY=e.clientY*scale;",
-  "lastX=e.screenX;lastY=e.screenY;",
-  'pointerdown screen coordinates'
-);
-replaceOnce(
-  "const sx=e.clientX*scale,sy=e.clientY*scale,dx=sx-lastX,dy=sy-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=sx;lastY=sy;apply();e.preventDefault();",
-  "const dx=e.screenX-lastX,dy=e.screenY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;lastX=e.screenX;lastY=e.screenY;obj.style.left=x+'px';obj.style.top=y+'px';e.preventDefault();",
-  'pointermove 1:1 pan'
-);
-replaceOnce(
-  "drag=false;wrap.classList.remove('dragging');save();scheduleRasterRefresh(120);",
-  "drag=false;wrap.classList.remove('dragging');apply();save();scheduleRasterRefresh(120);",
-  'pointerup clamp'
-);
-
-// Request substantially more raster pixels than screen pixels even on DPR=1 displays.
-replaceOnce(
-  "const dpr=Math.min(2,window.devicePixelRatio||1),outW=Math.max(512,Math.min(3072,Math.round(wrap.clientWidth*dpr))),outH=Math.max(512,Math.min(3072,Math.round(wrap.clientHeight*dpr)));",
-  "const quality=Math.min(4,Math.max(2.5,(window.devicePixelRatio||1)*2)),outW=Math.max(1280,Math.min(4096,Math.round(wrap.clientWidth*quality))),outH=Math.max(1280,Math.min(4096,Math.round(wrap.clientHeight*quality)));",
-  'hires raster output density'
-);
-replaceOnce(
-  "u.searchParams.set('dpi',scale>=8?'192':'144');",
-  "u.searchParams.set('dpi',scale>=8?'288':'192');",
-  'hires raster dpi'
-);
-
-// Use gentler wheel steps at high magnification and a practical maximum zoom.
-replaceOnce(
-  "const zoom=(factor,cx=wrap.clientWidth/2,cy=wrap.clientHeight/2)=>{const old=scale,ns=Math.max(.15,Math.min(60,scale*factor));x=cx-(cx-x)*(ns/old);y=cy-(cy-y)*(ns/old);scale=ns;apply();save();scheduleRasterRefresh();};",
-  "const zoom=(factor,cx=wrap.clientWidth/2,cy=wrap.clientHeight/2)=>{const old=scale,ns=Math.max(.15,Math.min(20,scale*factor));if(Math.abs(ns-old)<.0001)return;x=cx-(cx-x)*(ns/old);y=cy-(cy-y)*(ns/old);scale=ns;apply();save();scheduleRasterRefresh();};const wheelFactor=delta=>{const step=scale>=10?1.08:scale>=5?1.12:scale>=2.5?1.16:1.22;return delta<0?step:1/step;};",
-  'adaptive cursor zoom'
-);
-
-// Split relation list into touching / very close / close.
-replaceOnce(
-  "const rel=confirmedRelations[group]||{touching:[],close:[]};",
-  "const rel=confirmedRelations[group]||{touching:[],close:[]};const veryClose=rel.close.filter(x=>Number(x[2])<=50),near=rel.close.filter(x=>Number(x[2])>50);",
-  'relation buckets'
-);
-replaceOnce(
-  "const pair=([a,b,d],touching=false)=>{const label=touching?'ΕΦΑΠΤΕΤΑΙ':d<=50?'ΠΑΡΑ ΠΟΛΥ ΚΟΝΤΑ':'ΠΟΛΥ ΚΟΝΤΑ';const distance=touching?'0 m':`${num(d)} m`;return `<div class=\"relcard\" data-hover-pair=\"${a},${b}\"><div class=\"relpair\">${propLink(a)}<span class=\"arrow\">↔</span>${propLink(b)}</div><div class=\"reldist\">${distance} — ${label}</div></div>`;};",
-  "const pair=([a,b,d],touching=false)=>{const label=touching?'ΕΦΑΠΤΕΤΑΙ':Number(d)<=50?'ΠΟΛΥ ΚΟΝΤΑ':'ΚΟΝΤΑ';const distance=touching?'0 m':`${num(d)} m`;return `<div class=\"relcard\" data-hover-pair=\"${a},${b}\"><div class=\"relpair\">${propLink(a)}<span class=\"arrow\">↔</span>${propLink(b)}</div><div class=\"reldist\">${distance} — ${label}</div></div>`;};",
-  'relation labels'
-);
-replaceOnce(
-  "const close=rel.close.length?rel.close.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';\n  return `<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΦΑΠΤΟΝΤΑΙ</h2>${touch}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΠΟΛΥ ΚΟΝΤΑ</h2>${close}`;",
-  "const very=veryClose.length?veryClose.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';const close=near.length?near.map(x=>pair(x,false)).join(''):'<div class=\"noneCard\">Καμία επιβεβαιωμένη σχέση.</div>';\n  return `<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΦΑΠΤΟΝΤΑΙ</h2>${touch}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΠΟΛΥ ΚΟΝΤΑ</h2>${very}<h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΟΥ ΕΙΝΑΙ ΚΟΝΤΑ</h2>${close}`;",
-  'relation sections'
-);
-
-// Add top/bottom buttons to return to the top of the property sidebar.
-replaceOnce(
-  "return `<div class=\"vsideHead\"><a class=\"allprops\" href=\"/properties\">ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ</a></div>${relationBlock(group)}<h2 class=\"sectionTitle\">ΙΔΙΟΚΤΗΤΑ ΑΚΙΝΗΤΑ</h2>${filters}<div id=\"ownedList\">${owned}</div><h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΡΟΣ ΑΓΟΡΑ</h2><div id=\"candidateList\">${candidates}</div>`;",
-  "return `<div class=\"vsideHead\"><a class=\"allprops\" href=\"/properties\">ΟΛΑ ΤΑ ΑΚΙΝΗΤΑ</a><button class=\"toTop\" type=\"button\" data-to-top>↑ ΚΟΡΥΦΗ</button></div>${relationBlock(group)}<h2 class=\"sectionTitle\">ΙΔΙΟΚΤΗΤΑ ΑΚΙΝΗΤΑ</h2>${filters}<div id=\"ownedList\">${owned}</div><h2 class=\"sectionTitle\">ΑΚΙΝΗΤΑ ΠΡΟΣ ΑΓΟΡΑ</h2><div id=\"candidateList\">${candidates}</div><div class=\"bottomTop\"><button class=\"toTop\" type=\"button\" data-to-top>↑ ΚΟΡΥΦΗ</button></div>`;",
-  'sidebar top buttons'
-);
-replaceOnce(
-  ".vsideHead{display:flex;justify-content:flex-end;position:sticky;top:-16px;background:#fff;padding:4px 0 12px;z-index:4}.allprops{background:#111;color:#fff!important;padding:10px 13px;border-radius:6px;text-decoration:none;font-weight:700}",
-  ".vsideHead{display:flex;justify-content:flex-end;gap:8px;position:sticky;top:-16px;background:#fff;padding:4px 0 12px;z-index:4}.allprops{background:#111;color:#fff!important;padding:10px 13px;border-radius:6px;text-decoration:none;font-weight:700}.toTop{border:1px solid #777;background:#fff;color:#111;padding:9px 11px;border-radius:6px;font-weight:800;cursor:pointer}.bottomTop{display:flex;justify-content:flex-end;padding:8px 0 2px}",
-  'sidebar top button styles'
-);
-
-// Make hover highlight visually identical even for partial-ownership rows.
-replaceOnce(
-  ".vrow.owned.partial-owned{border-left:7px solid #77be87;background:#f5fff6}",
-  ".vrow.owned.partial-owned{border-left:7px solid #77be87;background:#f5fff6}.vrow.owned.partial-owned.is-hover,.vrow.owned.partial-owned:hover{background:#fff3a9;border-color:#c9a900;box-shadow:0 0 0 2px #f1d94a77}",
-  'uniform list highlight'
-);
-
-// Add a viewer-level loading overlay that remains visible until the inner SVG reports map readiness.
-replaceOnce(
-  ".hint{position:absolute;left:14px;bottom:14px;background:#fffffff0;padding:8px 11px;border-radius:6px;font-size:13px;z-index:4}",
-  ".hint{position:absolute;left:14px;bottom:14px;background:#fffffff0;padding:8px 11px;border-radius:6px;font-size:13px;z-index:4}@keyframes viewerBlink{0%,100%{opacity:1}50%{opacity:.3}}.viewerLoading{position:absolute;z-index:20;left:50%;top:20px;transform:translateX(-50%);background:#111;color:#fff;padding:11px 18px;border-radius:8px;font-weight:900;box-shadow:0 2px 8px #0005;animation:viewerBlink 1s infinite;pointer-events:none}",
-  'viewer loading style'
-);
-replaceOnce(
-  "<object id=\"mapobj\" class=\"mapobj\" data=\"/map.svg?group=${encodeURIComponent(group)}&mpp=${mpp}&v=3.7\" type=\"image/svg+xml\"></object><div class=\"mapLegend\">",
-  "<object id=\"mapobj\" class=\"mapobj\" data=\"/map.svg?group=${encodeURIComponent(group)}&mpp=${mpp}&v=3.7\" type=\"image/svg+xml\"></object><div class=\"viewerLoading\" id=\"viewerLoading\">ΦΟΡΤΩΣΗ ΧΑΡΤΗ…</div><div class=\"mapLegend\">",
-  'viewer loading markup'
-);
-
-// When hovering a related parcel on the map, reveal the relation card first, not the later property row.
-replaceOnce(
-  "const setListHighlight=(key,on,reveal=false)=>{const row=rowFor(key);if(row)row.classList.toggle('is-hover',on);relationLinksFor(key).forEach(a=>a.classList.toggle('is-hover',on));relationCardsFor(key).forEach(c=>c.classList.toggle('is-hover',on));if(on&&reveal)revealRow(key);};",
-  "const revealRelation=key=>{const cards=relationCardsFor(key);if(!cards.length)return false;const card=cards[0];requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),cr=card.getBoundingClientRect();if(cr.top<sr.top+30||cr.bottom>sr.bottom-30){const target=side.scrollTop+(cr.top-sr.top)-(side.clientHeight/2)+(cr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});return true;};const setListHighlight=(key,on,reveal=false)=>{const row=rowFor(key);if(row)row.classList.toggle('is-hover',on);relationLinksFor(key).forEach(a=>a.classList.toggle('is-hover',on));relationCardsFor(key).forEach(c=>c.classList.toggle('is-hover',on));if(on&&reveal&&!revealRelation(key))revealRow(key);};",
-  'relation-first reveal'
-);
-
-// Use a topmost SVG clone for property highlighting so it remains visible after zoom/raster refresh.
-replaceOnce(
-  "const setMapHighlight=(key,on)=>{const p=parcelPath(key);if(!p)return;if(on){if(!p.dataset.hlStroke){p.dataset.hlStroke=p.getAttribute('stroke')||'';p.dataset.hlWidth=p.getAttribute('stroke-width')||'';p.dataset.hlOpacity=p.getAttribute('fill-opacity')||'';}p.setAttribute('stroke','#ffd400');p.setAttribute('stroke-width','7');p.setAttribute('fill-opacity','.96');p.style.filter='drop-shadow(0 0 6px #ffcc00)';}else{if(p.dataset.hlStroke)p.setAttribute('stroke',p.dataset.hlStroke);if(p.dataset.hlWidth)p.setAttribute('stroke-width',p.dataset.hlWidth);if(p.dataset.hlOpacity)p.setAttribute('fill-opacity',p.dataset.hlOpacity);p.style.filter='';}};",
-  "const setMapHighlight=(key,on)=>{if(!svgDoc)return;const id='active-highlight-'+key;const old=svgDoc.getElementById(id);if(!on){if(old)old.remove();return;}if(old)return;const p=parcelPath(key);if(!p)return;const clone=p.cloneNode(true);clone.setAttribute('id',id);clone.removeAttribute('data-property-key');clone.setAttribute('pointer-events','none');clone.setAttribute('fill','#ffd400');clone.setAttribute('fill-opacity','.32');clone.setAttribute('stroke','#ffbf00');clone.setAttribute('stroke-width','9');clone.setAttribute('stroke-opacity','1');clone.setAttribute('vector-effect','non-scaling-stroke');clone.style.filter='drop-shadow(0 0 7px #ffcc00)';svgDoc.documentElement.appendChild(clone);};",
-  'topmost map highlight clone'
-);
-
-// If a list-hovered parcel is outside the current zoomed viewport, center it without changing zoom.
-replaceOnce(
-  "const revealRow=key=>{const row=rowFor(key);if(!row)return;if(row.style.display==='none'){row.dataset.hoverForced='1';row.style.display='';}requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),rr=row.getBoundingClientRect();if(rr.top<sr.top+30||rr.bottom>sr.bottom-30){const target=side.scrollTop+(rr.top-sr.top)-(side.clientHeight/2)+(rr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});};",
-  "const focusProperty=key=>{const p=parcelPath(key);if(!p)return;const b=p.getBBox(),cx=x+(b.x+b.width/2)*scale,cy=y+(b.y+b.height/2)*scale,mx=wrap.clientWidth*.15,my=wrap.clientHeight*.15;if(cx<mx||cx>wrap.clientWidth-mx||cy<my||cy>wrap.clientHeight-my){x=wrap.clientWidth/2-(b.x+b.width/2)*scale;y=wrap.clientHeight/2-(b.y+b.height/2)*scale;apply();save();scheduleRasterRefresh(120);}};const revealRow=key=>{const row=rowFor(key);if(!row)return;if(row.style.display==='none'){row.dataset.hoverForced='1';row.style.display='';}requestAnimationFrame(()=>{const sr=side.getBoundingClientRect(),rr=row.getBoundingClientRect();if(rr.top<sr.top+30||rr.bottom>sr.bottom-30){const target=side.scrollTop+(rr.top-sr.top)-(side.clientHeight/2)+(rr.height/2);side.scrollTo({top:Math.max(0,target),behavior:'smooth'});}});};",
-  'focus offscreen property'
-);
-
-// Hide duplicate vector parcel-number labels and the inner SVG loader; the viewer-level loader is the only loader shown.
-replaceOnce(
-  "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;markMissing(svg);",
-  "obj.addEventListener('load',()=>{try{const doc=obj.contentDocument,svg=doc.documentElement;svgDoc=doc;const clarityStyle=doc.createElementNS('http://www.w3.org/2000/svg','style');clarityStyle.textContent='.parcel-number{display:none!important}#map-loading{display:none!important}';svg.appendChild(clarityStyle);markMissing(svg);",
-  'hide duplicate labels and inner loader'
-);
-
-// Correct embedded-document wheel coordinates: anchor zoom to the actual cursor position in the outer viewport.
-replaceOnce(
-  "doc.addEventListener('wheel',e=>{e.preventDefault();const r=wrap.getBoundingClientRect();zoom(e.deltaY<0?1.28:.78,e.clientX-r.left,e.clientY-r.top);},{passive:false});",
-  "doc.addEventListener('wheel',e=>{e.preventDefault();zoom(wheelFactor(e.deltaY),x+e.clientX,y+e.clientY);},{passive:false});",
-  'embedded wheel cursor anchor'
-);
-replaceOnce(
-  "wrap.addEventListener('wheel',e=>{if(e.target===wrap){e.preventDefault();const r=wrap.getBoundingClientRect();zoom(e.deltaY<0?1.28:.78,e.clientX-r.left,e.clientY-r.top);}},{passive:false});",
-  "wrap.addEventListener('wheel',e=>{if(e.target===wrap){e.preventDefault();const r=wrap.getBoundingClientRect();zoom(wheelFactor(e.deltaY),e.clientX-r.left,e.clientY-r.top);}},{passive:false});",
-  'outer wheel adaptive zoom'
-);
-
-// Poll the inner SVG readiness flags and hide the outer loading overlay only when map layers are ready.
-replaceOnce(
-  "loaded=true;if(!restore())fit();sessionStorage.setItem('lastMapGroup',GROUP);scheduleRasterRefresh(120);",
-  "loaded=true;if(!restore())fit();sessionStorage.setItem('lastMapGroup',GROUP);scheduleRasterRefresh(120);const loadingEl=document.getElementById('viewerLoading');let readyChecks=0;const readyTimer=setInterval(()=>{readyChecks++;const root=svgDoc?.documentElement,base=root?.getAttribute('data-basemap-loaded'),cad=root?.getAttribute('data-cadastral-loaded');if((base==='1'&&(cad==='1'||cad==='error'))||readyChecks>200){clearInterval(readyTimer);if(loadingEl)loadingEl.style.display='none';}},100);",
-  'viewer loading readiness'
-);
-
-// Wire return-to-top buttons and make list hover center the parcel when necessary before highlighting it.
-replaceOnce(
-  "document.querySelectorAll('a[data-detail]').forEach(a=>a.addEventListener('click',save));",
-  "document.querySelectorAll('a[data-detail]').forEach(a=>a.addEventListener('click',save));document.querySelectorAll('[data-to-top]').forEach(b=>b.addEventListener('click',()=>side.scrollTo({top:0,behavior:'smooth'})));",
-  'top button behavior'
-);
-replaceOnce(
-  "document.querySelectorAll('.vrow[data-property-key]').forEach(row=>{const key=row.dataset.propertyKey;row.addEventListener('mouseenter',()=>setMapHighlight(key,true));row.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",
-  "document.querySelectorAll('.vrow[data-property-key]').forEach(row=>{const key=row.dataset.propertyKey;row.addEventListener('mouseenter',()=>{focusProperty(key);setMapHighlight(key,true);});row.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",
-  'property row focus and highlight'
-);
-replaceOnce(
-  "document.querySelectorAll('[data-hover-property]').forEach(el=>{const key=el.dataset.hoverProperty;el.addEventListener('mouseenter',()=>setMapHighlight(key,true));el.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",
-  "document.querySelectorAll('[data-hover-property]').forEach(el=>{const key=el.dataset.hoverProperty;el.addEventListener('mouseenter',()=>{focusProperty(key);setMapHighlight(key,true);});el.addEventListener('mouseleave',()=>setMapHighlight(key,false));});",
-  'relation link focus and highlight'
-);
-
-// Greek UI labels requested during acceptance testing.
-s=s.replaceAll('>Details</a>','>ΠΛΗΡΟΦΟΡΙΕΣ</a>')
-   .replaceAll('>Source ↗</a>','>ΠΗΓΗ ↗</a>')
-   .replaceAll('χωρίς source','χωρίς πηγή');
-
-s=s.replaceAll('v=3.7','v=3.12').replaceAll('viewer v3.7','viewer v3.12');
+s=s.replaceAll('>Details</a>','>ΠΛΗΡΟΦΟΡΙΕΣ</a>').replaceAll('>Source ↗</a>','>ΠΗΓΗ ↗</a>').replaceAll('χωρίς source','χωρίς πηγή');
+s=s.replaceAll('v=3.7','v=3.13').replaceAll('viewer v3.7','viewer v3.13');
 writeFileSync(runtimePath,s,'utf8');
 await import('./viewer.runtime.js');
