@@ -2,15 +2,14 @@ import {readFileSync,writeFileSync,existsSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 
 // The legacy runtime bootstrap chain patches tracked source files in place.
-// A second local start would otherwise try to re-apply the same exact-string patches
-// to already-patched files and fail. Always begin from the committed HEAD versions,
-// then restore those tracked files after the runtime modules have loaded.
+// Always begin each process start from the committed HEAD versions. Do not restore
+// those files while the process is running: the loaded viewer/core runtime depends
+// on the patched source/data files remaining consistent for lazy/dynamic imports.
+// The next start restores HEAD again before applying a fresh deterministic patch set.
 const tracked=['data.js','viewer.js','server.js'];
-const originals=new Map();
 for(const file of tracked){
   try{
     const committed=execFileSync('git',['show',`HEAD:${file}`],{encoding:'utf8'});
-    originals.set(file,committed);
     writeFileSync(file,committed,'utf8');
   }catch(e){
     throw new Error(`Unable to restore committed source ${file}: ${e.message}`);
@@ -43,9 +42,4 @@ b3=b3.replace("readFileSync('./bootstrap2.js','utf8')","readFileSync('./bootstra
 if(!b3.includes("readFileSync('./bootstrap2.platform.js','utf8')")) throw new Error('platform patch not found: bootstrap3 source redirect');
 writeFileSync('./bootstrap3.platform.js',b3,'utf8');
 
-try{
-  await import('./bootstrap3.platform.js?platform='+Date.now());
-} finally {
-  // Keep the working tree clean even though the runtime chain uses in-place legacy patches.
-  for(const [file,content] of originals) writeFileSync(file,content,'utf8');
-}
+await import('./bootstrap3.platform.js?platform='+Date.now());
