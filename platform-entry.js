@@ -1,11 +1,8 @@
 import {readFileSync,writeFileSync,existsSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 
-// The legacy runtime bootstrap chain patches tracked source files in place.
-// Always begin each process start from the committed HEAD versions. Do not restore
-// those files while the process is running: the loaded viewer/core runtime depends
-// on the patched source/data files remaining consistent for lazy/dynamic imports.
-// The next start restores HEAD again before applying a fresh deterministic patch set.
+// Always begin each process start from the committed HEAD versions. The legacy bootstrap
+// chain patches tracked source files in place, so a clean baseline is required on restart.
 const tracked=['data.js','viewer.js','server.js'];
 for(const file of tracked){
   try{
@@ -26,20 +23,32 @@ for(const file of tracked){
 
 let b2=normalize(readFileSync('./bootstrap2.js','utf8'));
 
-// Limassol is an urban, widely-spread group. A single OR-query spanning all relevant
-// cadastral plans can make ArcGIS slow or stall the browser-side overlay fetch even when
-// the base map itself is healthy. For Limassol only, build one small query per distinct
-// SHEET+PLAN(+VIL_CODE) scope, page each independently, then dedupe OBJECTIDs locally.
-// Other accepted area maps retain the existing district/viewport behaviour unchanged.
-const oldScope="const groupProps=(mapGroups[group]?.keys||[]).map(k=>properties[k]).filter(Boolean),districts=[...new Set(groupProps.map(districtCode).filter(Boolean))];if(!districts.length)return[];const where=districts.length===1?'DIST_CODE='+districts[0]:'('+districts.map(d=>'DIST_CODE='+d).join(' OR ')+')',all=[];";
-const newScope="const groupProps=(mapGroups[group]?.keys||[]).map(k=>properties[k]).filter(Boolean),districts=[...new Set(groupProps.map(districtCode).filter(Boolean))];if(!districts.length)return[];const q=x=>String(x).replaceAll(\"'\",\"''\"),scopes=[...new Set(groupProps.filter(hasLocator).map(p=>{const dist=districtCode(p);if(!dist)return null;let clause=\"DIST_CODE=\"+dist+\" AND SHEET='\"+q(p.sheet)+\"' AND PLAN_NBR='\"+q(p.plan)+\"'\";if(p.vilCode!=null)clause+=\" AND VIL_CODE=\"+Number(p.vilCode);return \"(\"+clause+\")\";}).filter(Boolean))],where=districts.length===1?'DIST_CODE='+districts[0]:'('+districts.map(d=>'DIST_CODE='+d).join(' OR ')+')',all=[],seen=new Set();";
-if(!b2.includes(oldScope)) throw new Error('platform patch not found: Limassol cadastral scope');
-b2=b2.replace(oldScope,newScope);
-
-const oldLoop="  for(let offset=0,page=0;page<8;page++,offset+=1000){\n    const j=await query(PARCELS,{f:'json',where,geometry:`${ext.xmin},${ext.ymin},${ext.xmax},${ext.ymax}`,geometryType:'esriGeometryEnvelope',inSR:CRS,outSR:CRS,spatialRel:'esriSpatialRelIntersects',outFields:'OBJECTID,PARCEL_NBR,BLCK_CODE,SHEET,PLAN_NBR',returnGeometry:true,returnZ:false,resultOffset:offset,resultRecordCount:1000,orderByFields:'OBJECTID'},2,12000);\n    const fs=j.features||[];all.push(...fs);if(!j.exceededTransferLimit||fs.length<1000)break;\n  }\n  return all;";
-const newLoop="  const queries=group==='limassol'&&scopes.length?scopes:[where];\n  for(const scopedWhere of queries){\n    for(let offset=0,page=0;page<4;page++,offset+=1000){\n      const j=await query(PARCELS,{f:'json',where:scopedWhere,geometry:`${ext.xmin},${ext.ymin},${ext.xmax},${ext.ymax}`,geometryType:'esriGeometryEnvelope',inSR:CRS,outSR:CRS,spatialRel:'esriSpatialRelIntersects',outFields:'OBJECTID,PARCEL_NBR,BLCK_CODE,SHEET,PLAN_NBR',returnGeometry:true,returnZ:false,resultOffset:offset,resultRecordCount:1000,orderByFields:'OBJECTID'},2,12000);\n      const fs=j.features||[];for(const f of fs){const id=String(f.attributes?.OBJECTID??'');if(id&&seen.has(id))continue;if(id)seen.add(id);all.push(f);}if(!j.exceededTransferLimit||fs.length<1000)break;\n    }\n  }\n  return all;";
-if(!b2.includes(oldLoop)) throw new Error('platform patch not found: Limassol cadastral loop');
-b2=b2.replace(oldLoop,newLoop);
+// Replace the complete bootstrap2 cadastral implementation rather than patching fragile
+// internal snippets. Limassol is queried per distinct DLS SHEET+PLAN(+VIL_CODE), while
+// other area groups retain one district-scoped query. Results are paged and deduplicated.
+const cadImpl=[
+"const newCad=`async function cadastralParcels(group,ext){",
+"  const groupProps=(mapGroups[group]?.keys||[]).map(k=>properties[k]).filter(Boolean),districts=[...new Set(groupProps.map(districtCode).filter(Boolean))];",
+"  if(!districts.length)return[];",
+"  const q=x=>String(x).replaceAll(\"'\",\"''\");",
+"  const scopes=[...new Set(groupProps.filter(hasLocator).map(p=>{const dist=districtCode(p);if(!dist)return null;let clause=\"DIST_CODE=\"+dist+\" AND SHEET='\"+q(p.sheet)+\"' AND PLAN_NBR='\"+q(p.plan)+\"'\";if(p.vilCode!=null)clause+=\" AND VIL_CODE=\"+Number(p.vilCode);return \"(\"+clause+\")\";}).filter(Boolean))];",
+"  const districtWhere=districts.length===1?'DIST_CODE='+districts[0]:'('+districts.map(d=>'DIST_CODE='+d).join(' OR ')+')';",
+"  const queries=group==='limassol'&&scopes.length?scopes:[districtWhere],all=[],seen=new Set();",
+"  for(const scopedWhere of queries){",
+"    for(let offset=0,page=0;page<4;page++,offset+=1000){",
+"      const geometry=String(ext.xmin)+','+String(ext.ymin)+','+String(ext.xmax)+','+String(ext.ymax);",
+"      const j=await query(PARCELS,{f:'json',where:scopedWhere,geometry,geometryType:'esriGeometryEnvelope',inSR:CRS,outSR:CRS,spatialRel:'esriSpatialRelIntersects',outFields:'OBJECTID,PARCEL_NBR,BLCK_CODE,SHEET,PLAN_NBR',returnGeometry:true,returnZ:false,resultOffset:offset,resultRecordCount:1000,orderByFields:'OBJECTID'},2,12000);",
+"      const fs=j.features||[];",
+"      for(const f of fs){const id=String(f.attributes?.OBJECTID??'');if(id&&seen.has(id))continue;if(id)seen.add(id);all.push(f);}",
+"      if(!j.exceededTransferLimit||fs.length<1000)break;",
+"    }",
+"  }",
+"  return all;",
+"}`;"
+].join('\n');
+const cadPattern=/const newCad=`async function cadastralParcels\(group,ext\)\{[\s\S]*?\n\}`;/;
+if(!cadPattern.test(b2)) throw new Error('platform patch not found: cadastral implementation');
+b2=b2.replace(cadPattern,()=>cadImpl);
 writeFileSync('./bootstrap2.platform.js',b2,'utf8');
 
 let b3=normalize(readFileSync('./bootstrap3.js','utf8'));
