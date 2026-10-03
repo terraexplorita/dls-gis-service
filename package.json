@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node bootstrap3.js",
+    "start": "node platform-entry.js",
     "verify": "node preflight.js",
     "test": "node test.js"
   },
