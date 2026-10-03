@@ -21,10 +21,8 @@ for(const file of tracked){
   if(normalized!==source) writeFileSync(file,normalized,'utf8');
 }
 
-// Limassol's registered properties form a tall, narrow geographic extent. Without
-// aspect padding the generated SVG becomes a thin vertical strip even though the map
-// has loaded correctly. Pad only Limassol's display extent to a desktop-friendly ratio
-// while preserving geography and scale. Other areas retain their existing extent logic.
+// Limassol's registered properties form a tall, narrow geographic extent. Pad only its
+// display extent to a desktop-friendly ratio while preserving geography and scale.
 let core=normalize(readFileSync('./server.js','utf8'));
 const renderMarker='\nasync function renderBase(group,mpp=2){';
 if(!core.includes(renderMarker)) throw new Error('platform patch not found: renderBase marker');
@@ -41,25 +39,46 @@ const oldExtent="  const n=normalizeExtent(extent(items),mpp),{ext,w:mapW,h:mapH
 const newExtent="  const rawExtent=extent(items),displayExtent=group==='limassol'?padExtentToAspect(rawExtent,1.45):rawExtent,n=normalizeExtent(displayExtent,mpp),{ext,w:mapW,h:mapH}=n,tx=x=>(x-ext.xmin)/mpp,ty=y=>(ext.ymax-y)/mpp,bg=basemapUrls(ext,mapW,mapH);";
 if(!core.includes(oldExtent)) throw new Error('platform patch not found: renderBase extent');
 core=core.replace(oldExtent,newExtent);
+
+// Parcel numbers are a vector overlay. Keep them readable at every zoom instead of the
+// old faint 34% opacity, especially after the high-resolution raster refresh.
+const oldLabelCss='.parcel-number{opacity:.34}.cadparcel-group:hover .parcel-number{opacity:1;font-size:10px;fill:#000}';
+const newLabelCss='.parcel-number{opacity:.94;font-size:9px;fill:#111}.cadparcel-group:hover .parcel-number{opacity:1;font-size:11px;fill:#000}';
+if(!core.includes(oldLabelCss)) throw new Error('platform patch not found: parcel label CSS');
+core=core.replace(oldLabelCss,newLabelCss);
 writeFileSync('./server.js',core,'utf8');
 
 let b2=normalize(readFileSync('./bootstrap2.js','utf8'));
 
 // Replace the complete bootstrap2 cadastral implementation rather than patching fragile
-// internal snippets. Limassol is queried per distinct DLS SHEET+PLAN(+VIL_CODE), while
-// other area groups retain one district-scoped query. Results are paged and deduplicated.
+// internal snippets. For Limassol, do NOT download whole cadastral plans. Use the already
+// resolved exact property geometries to create small local windows around each unique
+// registered parent parcel, query only those neighbourhoods, and deduplicate OBJECTIDs.
+// This preserves detailed parcel context where it matters while making initial load much
+// lighter. Other area maps keep their existing district/viewport behaviour unchanged.
 const cadImpl=[
 "const newCad=`async function cadastralParcels(group,ext){",
-"  const groupProps=(mapGroups[group]?.keys||[]).map(k=>properties[k]).filter(Boolean),districts=[...new Set(groupProps.map(districtCode).filter(Boolean))];",
+"  const groupKeys=mapGroups[group]?.keys||[],groupProps=groupKeys.map(k=>properties[k]).filter(Boolean),districts=[...new Set(groupProps.map(districtCode).filter(Boolean))];",
 "  if(!districts.length)return[];",
-"  const q=x=>String(x).replaceAll(\"'\",\"''\");",
-"  const scopes=[...new Set(groupProps.filter(hasLocator).map(p=>{const dist=districtCode(p);if(!dist)return null;let clause=\"DIST_CODE=\"+dist+\" AND SHEET='\"+q(p.sheet)+\"' AND PLAN_NBR='\"+q(p.plan)+\"'\";if(p.vilCode!=null)clause+=\" AND VIL_CODE=\"+Number(p.vilCode);return \"(\"+clause+\")\";}).filter(Boolean))];",
-"  const districtWhere=districts.length===1?'DIST_CODE='+districts[0]:'('+districts.map(d=>'DIST_CODE='+d).join(' OR ')+')';",
-"  const queries=group==='limassol'&&scopes.length?scopes:[districtWhere],all=[],seen=new Set();",
-"  for(const scopedWhere of queries){",
-"    for(let offset=0,page=0;page<4;page++,offset+=1000){",
-"      const geometry=String(ext.xmin)+','+String(ext.ymin)+','+String(ext.xmax)+','+String(ext.ymax);",
-"      const j=await query(PARCELS,{f:'json',where:scopedWhere,geometry,geometryType:'esriGeometryEnvelope',inSR:CRS,outSR:CRS,spatialRel:'esriSpatialRelIntersects',outFields:'OBJECTID,PARCEL_NBR,BLCK_CODE,SHEET,PLAN_NBR',returnGeometry:true,returnZ:false,resultOffset:offset,resultRecordCount:1000,orderByFields:'OBJECTID'},2,12000);",
+"  const q=x=>String(x).replaceAll(\"'\",\"''\"),districtWhere=districts.length===1?'DIST_CODE='+districts[0]:'('+districts.map(d=>'DIST_CODE='+d).join(' OR ')+')';",
+"  let windows=[];",
+"  if(group==='limassol'){",
+"    try{",
+"      const batch=await groupPropertyFeatures(group,groupKeys),used=new Set();",
+"      for(const p of groupProps.filter(hasLocator)){",
+"        const f=safeFeature(batch.features,p);if(!f)continue;",
+"        const id=String(f.attributes?.OBJECTID??f.attributes?.SBPI_ID_NO??'');if(id&&used.has(id))continue;if(id)used.add(id);",
+"        const b=bbox(f),pad=220,dist=districtCode(p);if(!dist)continue;",
+"        let where=\"DIST_CODE=\"+dist+\" AND SHEET='\"+q(p.sheet)+\"' AND PLAN_NBR='\"+q(p.plan)+\"'\";if(p.vilCode!=null)where+=\" AND VIL_CODE=\"+Number(p.vilCode);",
+"        windows.push({where,geometry:[b.xmin-pad,b.ymin-pad,b.xmax+pad,b.ymax+pad].join(',')});",
+"      }",
+"    }catch(e){console.warn('LIMASSOL_LOCAL_CADASTRE_FALLBACK '+e.message);}",
+"  }",
+"  if(!windows.length)windows=[{where:districtWhere,geometry:[ext.xmin,ext.ymin,ext.xmax,ext.ymax].join(',')}];",
+"  const all=[],seen=new Set();",
+"  for(const win of windows){",
+"    for(let offset=0,page=0;page<2;page++,offset+=1000){",
+"      const j=await query(PARCELS,{f:'json',where:win.where,geometry:win.geometry,geometryType:'esriGeometryEnvelope',inSR:CRS,outSR:CRS,spatialRel:'esriSpatialRelIntersects',outFields:'OBJECTID,PARCEL_NBR,BLCK_CODE,SHEET,PLAN_NBR',returnGeometry:true,returnZ:false,resultOffset:offset,resultRecordCount:1000,orderByFields:'OBJECTID'},2,10000);",
 "      const fs=j.features||[];",
 "      for(const f of fs){const id=String(f.attributes?.OBJECTID??'');if(id&&seen.has(id))continue;if(id)seen.add(id);all.push(f);}",
 "      if(!j.exceededTransferLimit||fs.length<1000)break;",
