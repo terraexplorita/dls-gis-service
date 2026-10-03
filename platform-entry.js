@@ -21,6 +21,28 @@ for(const file of tracked){
   if(normalized!==source) writeFileSync(file,normalized,'utf8');
 }
 
+// Limassol's registered properties form a tall, narrow geographic extent. Without
+// aspect padding the generated SVG becomes a thin vertical strip even though the map
+// has loaded correctly. Pad only Limassol's display extent to a desktop-friendly ratio
+// while preserving geography and scale. Other areas retain their existing extent logic.
+let core=normalize(readFileSync('./server.js','utf8'));
+const renderMarker='\nasync function renderBase(group,mpp=2){';
+if(!core.includes(renderMarker)) throw new Error('platform patch not found: renderBase marker');
+const aspectHelper=`
+function padExtentToAspect(e,target=1.45){
+  const w=Math.max(1,e.xmax-e.xmin),h=Math.max(1,e.ymax-e.ymin),ratio=w/h;
+  if(ratio<target){const want=h*target,extra=(want-w)/2;return{xmin:e.xmin-extra,xmax:e.xmax+extra,ymin:e.ymin,ymax:e.ymax};}
+  if(ratio>target){const want=w/target,extra=(want-h)/2;return{xmin:e.xmin,xmax:e.xmax,ymin:e.ymin-extra,ymax:e.ymax+extra};}
+  return e;
+}
+`;
+core=core.replace(renderMarker,'\n'+aspectHelper+renderMarker);
+const oldExtent="  const n=normalizeExtent(extent(items),mpp),{ext,w:mapW,h:mapH}=n,tx=x=>(x-ext.xmin)/mpp,ty=y=>(ext.ymax-y)/mpp,bg=basemapUrls(ext,mapW,mapH);";
+const newExtent="  const rawExtent=extent(items),displayExtent=group==='limassol'?padExtentToAspect(rawExtent,1.45):rawExtent,n=normalizeExtent(displayExtent,mpp),{ext,w:mapW,h:mapH}=n,tx=x=>(x-ext.xmin)/mpp,ty=y=>(ext.ymax-y)/mpp,bg=basemapUrls(ext,mapW,mapH);";
+if(!core.includes(oldExtent)) throw new Error('platform patch not found: renderBase extent');
+core=core.replace(oldExtent,newExtent);
+writeFileSync('./server.js',core,'utf8');
+
 let b2=normalize(readFileSync('./bootstrap2.js','utf8'));
 
 // Replace the complete bootstrap2 cadastral implementation rather than patching fragile
