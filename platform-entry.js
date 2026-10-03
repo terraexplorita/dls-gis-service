@@ -1,10 +1,24 @@
 import {readFileSync,writeFileSync,existsSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 
-// The runtime bootstrap chain performs exact source-string patches.
-// Git for Windows may checkout text files with CRLF while Render/Linux uses LF.
-// Build platform-safe runtime copies instead of mutating the tracked source files.
+// The legacy runtime bootstrap chain patches tracked source files in place.
+// A second local start would otherwise try to re-apply the same exact-string patches
+// to already-patched files and fail. Always begin from the committed HEAD versions,
+// then restore those tracked files after the runtime modules have loaded.
+const tracked=['data.js','viewer.js','server.js'];
+const originals=new Map();
+for(const file of tracked){
+  try{
+    const committed=execFileSync('git',['show',`HEAD:${file}`],{encoding:'utf8'});
+    originals.set(file,committed);
+    writeFileSync(file,committed,'utf8');
+  }catch(e){
+    throw new Error(`Unable to restore committed source ${file}: ${e.message}`);
+  }
+}
+
 const normalize=s=>s.replace(/\r\n?/g,'\n');
-for(const file of ['./data.js','./viewer.js','./server.js']){
+for(const file of tracked){
   if(!existsSync(file)) continue;
   const source=readFileSync(file,'utf8');
   const normalized=normalize(source);
@@ -29,4 +43,9 @@ b3=b3.replace("readFileSync('./bootstrap2.js','utf8')","readFileSync('./bootstra
 if(!b3.includes("readFileSync('./bootstrap2.platform.js','utf8')")) throw new Error('platform patch not found: bootstrap3 source redirect');
 writeFileSync('./bootstrap3.platform.js',b3,'utf8');
 
-await import('./bootstrap3.platform.js?platform='+Date.now());
+try{
+  await import('./bootstrap3.platform.js?platform='+Date.now());
+} finally {
+  // Keep the working tree clean even though the runtime chain uses in-place legacy patches.
+  for(const [file,content] of originals) writeFileSync(file,content,'utf8');
+}
